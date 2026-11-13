@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>큐브 조립 작전 · 정육면체 전개도 11가지</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1d2b4f;--bg:#eef4ff;--card:#fff;--pri:#3b6ef5;--ok:#2f9e63;--bad:#e8590c;--A:#ff8787;--B:#74c0fc;--C:#ffe066}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Jua','Malgun Gothic','Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:20px}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:var(--ink);color:#fff}
+header h1{font-size:26px;margin:0} header .st{font-size:22px}
+main{max-width:980px;margin:0 auto;padding:16px}
+.panel{background:var(--card);border-radius:20px;padding:20px;box-shadow:0 4px 0 #cfd9f5;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:28px}
+input[type=text],input[type=number]{font:inherit;font-size:24px;padding:10px 14px;border:3px solid #c5d3f7;border-radius:14px;width:180px}
+.btn{font:inherit;font-size:26px;border:0;border-radius:18px;padding:14px 26px;background:var(--pri);color:#fff;box-shadow:0 5px 0 #2a4fb8;cursor:pointer;margin:6px 6px 6px 0}
+.btn.alt{background:#fff;color:var(--ink);box-shadow:0 5px 0 #b8c6ec;border:3px solid #c5d3f7}
+.btn:active{transform:translateY(4px);box-shadow:0 1px 0 #2a4fb8}
+.seg label{display:inline-block;margin:4px 8px 4px 0;padding:10px 16px;border:3px solid #c5d3f7;border-radius:14px;cursor:pointer}
+.seg input{display:none} .seg input:checked+span{font-weight:bold} .seg label:has(input:checked){background:#dbe7ff;border-color:var(--pri)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.grid.g11{grid-template-columns:repeat(3,1fr)}
+.card{position:relative;background:#fff;border:4px solid #c5d3f7;border-radius:18px;padding:8px 8px 6px;font:inherit;color:inherit;text-align:center}
+button.card{cursor:pointer} button.card:active{transform:scale(.97)}
+.card svg{width:100%;height:150px;display:block}
+.card .no{position:absolute;left:10px;top:6px;font-size:26px}
+.card.ok{border-color:var(--ok);background:#ebfbee}.card.no2{border-color:var(--bad);background:#fff4e6}
+.card.target{border-color:var(--pri);animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px #3b6ef544}}
+.cap{font-size:17px;line-height:1.35;min-height:46px;padding:2px 4px}
+.q{font-size:26px;margin:6px 0 12px}
+.opts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.opts .btn{font-size:21px;text-align:left;margin:0}
+.msg{font-size:24px;margin:10px 0;min-height:34px}
+.tag{display:inline-block;background:#fff3bf;border-radius:10px;padding:2px 10px;margin:2px;font-size:16px}
+.small{font-size:16px;color:#5a6a94}
+.leg span{display:inline-block;padding:2px 12px;border-radius:10px;margin-right:6px}
+@media(max-width:700px){.grid.g11{grid-template-columns:repeat(2,1fr)}.opts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>🧊 큐브 조립 작전</h1><div class="st" id="st"></div></header>
+<main id="app"></main>
+<script>
+/* ===== 설정: 구글 앱스크립트 웹앱 URL을 여기에 붙여 넣으세요 ===== */
+const SCRIPT_URL = '';
+const ROUNDS = 10, PT_PICK = 10, PT_BONUS = 5;
+
+//CORE
+const K=(r,c)=>r+','+c;
+// 활동지 (1)~(11) 순서의 정육면체 전개도 [행,열]
+const NETS=[
+[[0,0],[1,0],[1,1],[1,2],[1,3],[2,0]],[[0,0],[1,0],[1,1],[1,2],[1,3],[2,1]],
+[[0,0],[1,0],[1,1],[1,2],[1,3],[2,2]],[[0,0],[1,0],[1,1],[1,2],[1,3],[2,3]],
+[[0,1],[1,0],[1,1],[1,2],[1,3],[2,1]],[[0,1],[1,0],[1,1],[1,2],[1,3],[2,2]],
+[[0,0],[0,1],[1,1],[1,2],[1,3],[2,1]],[[0,2],[0,3],[1,0],[1,1],[1,2],[2,0]],
+[[0,0],[0,1],[1,1],[1,2],[2,2],[2,3]],[[0,0],[0,1],[1,1],[1,2],[1,3],[2,2]],
+[[0,0],[0,1],[0,2],[1,2],[1,3],[1,4]]];
+const DIR={E:[0,1],W:[0,-1],N:[-1,0],S:[1,0]};
+// 주사위 굴리기: 상태 [위,아래,북,남,동,서]
+function roll(s,d){const[T,B,N,S,E,W]=s;
+ if(d==='E')return[W,E,N,S,T,B]; if(d==='W')return[E,W,N,S,B,T];
+ if(d==='N')return[S,N,T,B,E,W]; return[N,S,B,T,E,W];}
+function sym(cells,t){let c=cells.map(x=>x.slice());
+ for(let i=0;i<(t&3);i++)c=c.map(([r,q])=>[q,-r]);
+ if(t&4)c=c.map(([r,q])=>[r,-q]);
+ const mr=Math.min(...c.map(x=>x[0])),mc=Math.min(...c.map(x=>x[1]));
+ return c.map(([r,q])=>[r-mr,q-mc]);}
+function canon(cells){let b=null;for(let t=0;t<8;t++){const s=sym(cells,t).map(x=>K(...x)).sort().join(';');if(b===null||s<b)b=s;}return b;}
+// 접어 보기: 각 칸이 어느 면이 되는지(0~5, 마주 보는 면은 같은 쌍 f>>1) 계산
+function analyze(cells){
+ const set=new Set(cells.map(x=>K(...x))),faces=new Map(),conf=new Set(),used={},seen=new Set();
+ const st=cells[0];seen.add(K(...st));faces.set(K(...st),1);used[1]=K(...st);
+ const q=[[st[0],st[1],[0,1,2,3,4,5]]];
+ while(q.length){const[r,c,s]=q.shift();
+  for(const d in DIR){const nr=r+DIR[d][0],nc=c+DIR[d][1],k=K(nr,nc);
+   if(!set.has(k)||seen.has(k))continue;seen.add(k);
+   const ns=roll(s,d),f=ns[1];
+   if(used[f]!==undefined){conf.add(k);conf.add(used[f]);}else used[f]=k;
+   faces.set(k,f);q.push([nr,nc,ns]);}}
+ const n=cells.length;let kind,detail='';
+ if(seen.size<n)kind='vertex';else if(n<6)kind='few';else if(n>6)kind='many';
+ else if(conf.size){kind='overlap';
+  const has=(r,c)=>set.has(K(r,c));
+  if(cells.some(([r,c])=>has(r,c+1)&&has(r+1,c)&&has(r+1,c+1)))detail='block';
+  else{const L=(a,b)=>cells.some(([r,c])=>[0,1,2,3,4].every(i=>has(r+i*a,c+i*b)));if(L(0,1)||L(1,0))detail='line5';}
+ }else kind='net';
+ return{kind,detail,conf:kind==='overlap'?conf:new Set(),faces:kind==='net'?faces:null};}
+function typeOf(cells){
+ const cnt=(i)=>{const m={};cells.forEach(x=>m[x[i]]=(m[x[i]]||0)+1);return Object.values(m).sort((a,b)=>b-a).join('');};
+ const T={'411':'1-4-1형','321':'2-3-1형','222':'2-2-2형','33':'3-3형'};
+ return T[cnt(0)]||T[cnt(1)]||'';}
+// 전개도가 아닌 모양 풀(pool) 만들기
+let lvl=new Map([[canon([[0,0]]),[[0,0]]]]);
+for(let n=1;n<6;n++){const nx=new Map();
+ for(const cells of lvl.values()){const S=new Set(cells.map(x=>K(...x)));
+  for(const[r,c]of cells)for(const[dr,dc]of[[1,0],[-1,0],[0,1],[0,-1]]){
+   if(S.has(K(r+dr,c+dc)))continue;const nc=[...cells,[r+dr,c+dc]],key=canon(nc);if(!nx.has(key))nx.set(key,nc);}}
+ lvl=nx;}
+const POOL={overlap:[],few:[],many:[],vertex:[[[0,0],[0,1],[0,2],[1,3],[1,4],[1,5]],[[0,0],[0,1],[1,2],[1,3],[2,3],[2,4]]]};
+const seenP=new Set();
+function addPool(cells){const a=analyze(cells);if(a.kind==='net')return;
+ const key=canon(cells);if(seenP.has(key))return;seenP.add(key);if(['overlap','few','many'].includes(a.kind))POOL[a.kind].push(cells);}
+for(const c of lvl.values())addPool(c);
+for(const net of NETS){
+ net.forEach((_,i)=>addPool(net.filter((_,j)=>j!==i)));
+ const S=new Set(net.map(x=>K(...x)));
+ for(const[r,c]of net)for(const[dr,dc]of[[1,0],[-1,0],[0,1],[0,-1]])if(!S.has(K(r+dr,c+dc))){const m=[...net,[r+dr,c+dc]];if(canon(m)&&analyze(m).kind==='many')addPool(m);}
+}
+//ENDCORE
+
+const LABEL={overlap:'겹침',few:'면이 적음',many:'면이 많음',vertex:'꼭짓점만 닿음'};
+const REASONS={overlap:'접으면 두 면이 겹쳐요',few:'면이 6개보다 적어요',many:'면이 6개보다 많아요',vertex:'변이 아니라 꼭짓점으로만 닿아 있어요'};
+const WHY=(c)=>({overlap:{block:'네모 4개가 2×2로 뭉쳐 있어서 접으면 면이 겹쳐요',line5:'한 줄에 5개가 늘어서 있어서 접으면 첫 면과 끝 면이 겹쳐요','':'접으면 두 면이 겹쳐요 (빨간 칸)'}[c.detail],
+ few:'면이 5개뿐이라 정육면체를 못 만들어요',many:'면이 7개라 너무 많아요',vertex:'꼭짓점으로만 닿아서 접히지 않아요',net:'✅ 전개도 · '+c.type}[c.kind]);
+const COL=['#ff8787','#74c0fc','#ffe066'],LET=['A','B','C'];
+const rnd=a=>a[Math.floor(Math.random()*a.length)];
+const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+
+function svg(cells,a,o={}){
+ const u=40,p=6,w=Math.max(...cells.map(x=>x[1]))+1,h=Math.max(...cells.map(x=>x[0]))+1;
+ let s=`<svg viewBox="0 0 ${w*u+p*2} ${h*u+p*2}" preserveAspectRatio="xMidYMid meet">`;
+ for(const[r,c]of cells){const k=K(r,c);let f='#fff3bf',t='';
+  if(o.reveal&&a.faces){const g=a.faces.get(k)>>1;f=COL[g];t=LET[g];}
+  if(o.reveal&&a.conf.has(k)){f='#ff8787';t='✕';}
+  s+=`<rect x="${c*u+p}" y="${r*u+p}" width="${u}" height="${u}" rx="4" fill="${f}" stroke="#1d2b4f" stroke-width="2"/>`;
+  if(t)s+=`<text x="${c*u+p+u/2}" y="${r*u+p+u/2+8}" text-anchor="middle" font-size="22" fill="#1d2b4f" font-family="Jua,sans-serif">${t}</text>`;}
+ return s+'</svg>';}
+
+let U=JSON.parse(localStorage.getItem('cubeUser')||'{}'),G=null;
+const app=document.getElementById('app'),st=document.getElementById('st');
+
+function home(){st.textContent='';
+ app.innerHTML=`<div class="panel"><h2>🧊 정육면체 전개도 11가지 마스터!</h2>
+ <p>전개도 <b>11가지</b>를 외우고, 가짜 전개도를 가려내는 작전이에요. 전개도를 고르면 <b>+${PT_PICK}점</b>, 가짜가 왜 안 되는지 맞히면 <b>보너스 +${PT_BONUS}점</b>!</p>
+ <p>번호 <input type="number" id="no" min="1" max="40" value="${U.no||''}"> 이름 <input type="text" id="nm" value="${U.name||''}"></p>
+ <div class="seg"><label><input type="radio" name="lv" value="쉬움" ${U.lv!=='도전'?'checked':''}><span>🙂 쉬움 (활동지 모양 그대로)</span></label>
+ <label><input type="radio" name="lv" value="도전" ${U.lv==='도전'?'checked':''}><span>🔥 도전 (돌리고 뒤집어서)</span></label></div>
+ <button class="btn alt" onclick="learn()">📖 11가지 익히기</button><button class="btn" onclick="start()">🚀 작전 시작</button>
+ <div class="small">${SCRIPT_URL?'기록은 선생님 구글 시트로 전송돼요.':'⚠ 연습 모드: 시트 주소가 없어 기록이 이 기기에만 저장돼요.'}</div></div>`;}
+
+function learn(){
+ const groups={};NETS.forEach((c,i)=>{const t=typeOf(c);(groups[t]=groups[t]||[]).push(i);});
+ let h=`<div class="panel"><h2>📖 11가지 전개도</h2><div class="leg"><span style="background:${COL[0]}">A 마주 보는 면</span><span style="background:${COL[1]}">B 마주 보는 면</span><span style="background:${COL[2]}">C 마주 보는 면</span></div>
+ <p class="small">같은 색(글자)은 접었을 때 서로 마주 보는 면이에요. 가운데 한 줄에 놓인 면의 개수로 유형을 나눠 외워요.</p>`;
+ for(const t of ['1-4-1형','2-3-1형','2-2-2형','3-3형']){
+  h+=`<h2 style="font-size:24px;margin-top:14px">${t} (${groups[t].length}가지)</h2><div class="grid g11">`;
+  for(const i of groups[t]){const a=analyze(NETS[i]);h+=`<div class="card"><span class="no">(${i+1})</span>${svg(NETS[i],a,{reveal:1})}</div>`;}
+  h+='</div>';}
+ app.innerHTML=h+`<button class="btn" onclick="home()">← 돌아가기</button></div>`;}
+
+function mk(cells,kind,net,lv){const t=lv==='도전'||kind!=='net'?Math.floor(Math.random()*8):0;
+ const c=sym(cells,t),a=analyze(c);return{cells:c,a,kind:a.kind,idx:net,type:net>=0?typeOf(cells):'',detail:a.detail};}
+function buildRound(netIdx){
+ const ds=[rnd(POOL.overlap),rnd(POOL.overlap),rnd([...POOL.few,...POOL.many,...POOL.vertex,...POOL.overlap])];
+ const cards=shuf([mk(NETS[netIdx],'net',netIdx,G.lv),...ds.map(d=>mk(d,'x',-1,G.lv))]);
+ cards.forEach(c=>{c.type=c.type||'';});
+ return{cards,target:rnd(cards.map((c,i)=>i).filter(i=>cards[i].kind!=='net')),net:cards.findIndex(c=>c.kind==='net')};}
+
+function start(){
+ const no=document.getElementById('no').value.trim(),nm=document.getElementById('nm').value.trim();
+ if(!no||!nm){alert('번호와 이름을 입력해 주세요!');return;}
+ const lv=document.querySelector('[name=lv]:checked').value;U={no,name:nm,lv};localStorage.setItem('cubeUser',JSON.stringify(U));
+ G={lv,i:0,score:0,pickOK:0,bonusOK:0,miss:[],t0:Date.now(),deck:shuf(NETS.map((_,i)=>i)).slice(0,ROUNDS)};G.R=buildRound(G.deck[0]);play();}
+
+const NUM=['①','②','③','④'];
+function cardsHTML(mode){const R=G.R;
+ return '<div class="grid">'+R.cards.map((c,i)=>{
+  const rev=mode==='reveal',cls=rev?(c.kind==='net'?'ok':'no2'):(mode==='mark'&&i===R.target?'target':'');
+  const cap=rev?`<div class="cap">${WHY(c)}</div>`:'';
+  const tag=mode==='pick'?'button':'div';
+  return `<${tag} class="card ${cls}" ${mode==='pick'?`onclick="pick(${i})"`:''}><span class="no">${NUM[i]}</span>${svg(c.cells,c.a,{reveal:rev})}${cap}</${tag}>`;}).join('')+'</div>';}
+function head(){st.textContent=`${G.i+1}/${ROUNDS} · ⭐ ${G.score}점`;}
+function play(){head();
+ app.innerHTML=`<div class="panel"><div class="q">정육면체 <b>전개도</b>인 것은 어느 것일까요?</div>${cardsHTML('pick')}</div>`;}
+
+function pick(i){const R=G.R,c=R.cards[i];
+ if(c.kind==='net'){G.score+=PT_PICK;G.pickOK++;head();
+  const t=R.cards[R.target];
+  app.innerHTML=`<div class="panel"><div class="msg" style="color:var(--ok)">✅ 정답! +${PT_PICK}점 &nbsp; 🎁 보너스 문제!</div>${cardsHTML('mark')}
+  <div class="q" style="margin-top:14px">${NUM[R.target]}번은 왜 전개도가 <b>아닐까요?</b></div>
+  <div class="opts">${shuf(Object.keys(REASONS)).map(k=>`<button class="btn alt" onclick="reason('${k}')">${REASONS[k]}</button>`).join('')}</div></div>`;
+ }else{G.miss.push(`${G.i+1}번째 문제: 가짜 선택(${LABEL[c.kind]})`);
+  feedback(`❌ 아쉬워요! ${NUM[i]}번은 ${WHY(c)}`,'var(--bad)');}}
+function reason(k){const t=G.R.cards[G.R.target];let m;
+ if(k===t.kind){G.score+=PT_BONUS;G.bonusOK++;m=`🎉 보너스 +${PT_BONUS}점! ${WHY(t)}`;feedback(m,'var(--ok)');}
+ else{G.miss.push(`${G.i+1}번째 이유: ${LABEL[k]}(정답 ${LABEL[t.kind]})`);feedback(`😅 이유는 이거였어요: ${WHY(t)}`,'var(--bad)');}}
+function feedback(msg,color){head();
+ app.innerHTML=`<div class="panel"><div class="msg" style="color:${color}">${msg}</div>${cardsHTML('reveal')}
+ <button class="btn" onclick="next()">${G.i+1<ROUNDS?'다음 문제 ▶':'결과 보기 🏁'}</button></div>`;}
+function next(){G.i++;if(G.i>=ROUNDS){finish();return;}G.R=buildRound(G.deck[G.i]);play();}
+
+function finish(){
+ const sec=Math.round((Date.now()-G.t0)/1000),max=ROUNDS*(PT_PICK+PT_BONUS),stars=G.score>=max*.85?3:G.score>=max*.6?2:1;
+ const rec={no:U.no,name:U.name,level:G.lv,score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,sec,miss:G.miss.join(' / ')};
+ st.textContent=`⭐ ${G.score}점`;
+ app.innerHTML=`<div class="panel"><h2>🏁 작전 완료!</h2><div style="font-size:48px">${'⭐'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
+ <p style="font-size:30px">${U.name} · <b>${G.score}점</b> / ${max}점</p>
+ <p>전개도 고르기 ${G.pickOK}/${ROUNDS} · 이유 보너스 ${G.bonusOK}/${G.pickOK} · ${sec}초</p>
+ ${G.miss.length?'<p>복습할 것: '+G.miss.map(m=>`<span class="tag">${m}</span>`).join('')+'</p>':'<p>🎉 하나도 안 틀렸어요!</p>'}
+ <div class="small" id="sv">기록 전송 중…</div>
+ <button class="btn" onclick="start2()">🔁 다시 하기</button><button class="btn alt" onclick="learn()">📖 11가지 다시 보기</button><button class="btn alt" onclick="home()">🏠 처음으로</button></div>`;
+ save(rec);}
+function start2(){G=null;home();}
+
+async function save(rec){
+ const log=JSON.parse(localStorage.getItem('cubeLog')||'[]');log.push({...rec,t:new Date().toISOString()});localStorage.setItem('cubeLog',JSON.stringify(log.slice(-50)));
+ const el=document.getElementById('sv');
+ if(!SCRIPT_URL){el.textContent='💾 이 기기에 저장했어요 (시트 주소 미설정)';return;}
+ const q=JSON.parse(localStorage.getItem('cubePending')||'[]');q.push(rec);
+ try{for(const r of q)await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(r)});
+  localStorage.removeItem('cubePending');el.textContent='✅ 선생님 시트로 기록을 보냈어요!';}
+ catch(e){localStorage.setItem('cubePending',JSON.stringify(q));el.textContent='📶 인터넷이 불안정해요. 다음에 접속할 때 다시 보낼게요.';}}
+home();
+</script>
+</body>
+</html>
