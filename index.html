@@ -37,7 +37,13 @@ button.card{cursor:pointer} button.card:active{transform:scale(.97)}
 .tag{display:inline-block;background:#fff3bf;border-radius:10px;padding:2px 10px;margin:2px;font-size:16px}
 .small{font-size:16px;color:#5a6a94}
 .leg span{display:inline-block;padding:2px 12px;border-radius:10px;margin-right:6px}
-@media(max-width:700px){.grid.g11{grid-template-columns:repeat(2,1fr)}.opts{grid-template-columns:1fr}}
+ .edgeview{max-width:720px;margin:12px auto;background:#f8fbff;border:2px solid #d4e0fa;border-radius:18px;padding:10px}
+ .edgeview svg{width:100%;height:auto;max-height:420px;display:block;touch-action:manipulation}
+ .edge-hit{cursor:pointer;stroke:transparent;stroke-width:18;stroke-linecap:round;pointer-events:stroke}
+ .edge-hit:hover{stroke:#3b6ef555}
+ .edge-note{background:#eef4ff;border-radius:14px;padding:12px;margin:12px 0}
+ .pill{display:inline-block;border-radius:99px;background:#e4edff;padding:5px 14px;margin:4px}
+ @media(max-width:700px){.grid.g11{grid-template-columns:repeat(2,1fr)}.opts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -45,8 +51,8 @@ button.card{cursor:pointer} button.card:active{transform:scale(.97)}
 <main id="app"></main>
 <script>
 /* ===== 설정: 구글 앱스크립트 웹앱 URL을 여기에 붙여 넣으세요 ===== */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQ0J32Bf0EvOHiPOqVHEe7p2bjX9osL1RIDfZwkRcId_X6puNFViDZvKCPCBe-dXkDaA/exec';
-const ROUNDS = 10, PT_PICK = 10, PT_BONUS = 5;
+const SCRIPT_URL = '';
+const ROUNDS = 10, EDGE_ROUNDS = 5, PT_PICK = 10, PT_BONUS = 5, PT_EDGE = 10;
 
 //CORE
 const K=(r,c)=>r+','+c;
@@ -129,13 +135,75 @@ function svg(cells,a,o={}){
   if(t)s+=`<text x="${c*u+p+u/2}" y="${r*u+p+u/2+8}" text-anchor="middle" font-size="22" fill="#1d2b4f" font-family="Jua,sans-serif">${t}</text>`;}
  return s+'</svg>';}
 
+
+// 3차원 접기 계산: 각 칸의 법선(n), 오른쪽(u), 아래쪽(v)을 추적한다.
+const V=(a)=>a.join(',');
+const neg=a=>a.map(x=>-x);
+function foldOrientation(cells){
+ const set=new Set(cells.map(x=>K(...x))), start=K(...cells[0]);
+ const out=new Map([[start,{n:[0,0,1],u:[1,0,0],v:[0,1,0]}]]),q=[cells[0]];
+ while(q.length){const [r,c]=q.shift(),b=out.get(K(r,c));
+  for(const dir of Object.keys(DIR)){
+   const nr=r+DIR[dir][0], nc=c+DIR[dir][1],k=K(nr,nc);
+   if(!set.has(k)||out.has(k))continue;
+   let x;
+   if(dir==='E')x={n:b.u,u:neg(b.n),v:b.v};
+   if(dir==='W')x={n:neg(b.u),u:b.n,v:b.v};
+   if(dir==='S')x={n:b.v,u:b.u,v:neg(b.n)};
+   if(dir==='N')x={n:neg(b.v),u:b.u,v:b.n};
+   out.set(k,x);q.push([nr,nc]);
+  }
+ }
+ return out;
+}
+// 정육면체의 한 모서리는 서로 수직인 두 면의 법선벡터 쌍으로 유일하게 결정된다.
+// 24개의 펼쳐진 경계선은 12개의 색깔 짝으로 정확히 묶인다.
+function edgePairs(cells){
+ const b=foldOrientation(cells),set=new Set(cells.map(x=>K(...x))),edges=[],byKey=new Map();
+ for(const[r,c]of cells){const here=b.get(K(r,c));
+  for(const side of ['N','E','S','W']){
+   const [dr,dc]=DIR[side];if(set.has(K(r+dr,c+dc)))continue;
+   const outward=side==='N'?neg(here.v):side==='S'?here.v:side==='E'?here.u:neg(here.u);
+   const physical=[V(here.n),V(outward)].sort().join('|');
+   const edge={id:edges.length,r,c,side,physical,partner:-1,color:-1};edges.push(edge);
+   if(!byKey.has(physical))byKey.set(physical,[]);byKey.get(physical).push(edge);
+  }
+ }
+ if(edges.length!==14 || [...byKey.values()].some(a=>a.length!==2))throw Error('모서리 계산 불일치: '+JSON.stringify(cells));
+ [...byKey.values()].forEach((pair,i)=>{pair[0].partner=pair[1].id;pair[1].partner=pair[0].id;pair[0].color=i;pair[1].color=i;});
+ return edges;
+}
+const EDGE_COLORS=['#e03131','#1971c2','#2b8a3e','#e67700','#862e9c','#0b7285','#c2255c','#5f3dc4','#a61e4d','#087f5b','#9c36b5','#795548'];
+function edgeSvg(cells,edges,o={}){
+ const u=65,p=29,w=Math.max(...cells.map(x=>x[1]))+1,h=Math.max(...cells.map(x=>x[0]))+1;
+ let html=`<svg viewBox="0 0 ${w*u+p*2} ${h*u+p*2}" role="img" aria-label="정육면체 전개도와 접히는 모서리">`;
+ for(const[r,c]of cells){const x=p+c*u,y=p+r*u;
+  html+=`<rect x="${x}" y="${y}" width="${u}" height="${u}" fill="#fff9e6" stroke="#b8c6ec" stroke-width="2"/>`;
+ }
+ for(const e of edges){const x=p+e.c*u,y=p+e.r*u;
+  const xy={N:[x,y,x+u,y],S:[x,y+u,x+u,y+u],W:[x,y,x,y+u],E:[x+u,y,x+u,y+u]}[e.side];
+  const selected=e.id===o.target,answer=o.showAnswer,correct=e.id===o.correct;
+  const color=answer?EDGE_COLORS[e.color]:selected?'#e03131':'#435575';
+  const width=answer?8:selected?9:4;
+  html+=`<line x1="${xy[0]}" y1="${xy[1]}" x2="${xy[2]}" y2="${xy[3]}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`;
+  if(selected&&!answer){html+=`<circle cx="${(xy[0]+xy[2])/2}" cy="${(xy[1]+xy[3])/2}" r="10" fill="#fff" stroke="#e03131" stroke-width="3"/>`;
+   html+=`<text x="${(xy[0]+xy[2])/2}" y="${(xy[1]+xy[3])/2+5}" font-size="14" text-anchor="middle" font-weight="bold" fill="#e03131">?</text>`;}
+  if(o.showAnswer && (selected||correct)){
+   html+=`<circle cx="${(xy[0]+xy[2])/2}" cy="${(xy[1]+xy[3])/2}" r="11" fill="#fff" stroke="${color}" stroke-width="2"/>`;
+   html+=`<text x="${(xy[0]+xy[2])/2}" y="${(xy[1]+xy[3])/2+5}" font-size="15" text-anchor="middle" font-weight="bold" fill="#1d2b4f">★</text>`;
+  }
+  if(o.clickable && !selected){html+=`<line class="edge-hit" data-edge="${e.id}" x1="${xy[0]}" y1="${xy[1]}" x2="${xy[2]}" y2="${xy[3]}" onclick="chooseEdge(${e.id})"/>`;}
+ }
+ return html+'</svg>';
+}
+
 let U=JSON.parse(localStorage.getItem('cubeUser')||'{}'),G=null;
 const app=document.getElementById('app'),st=document.getElementById('st');
 
 function home(){st.textContent='';
  app.innerHTML=`<div class="panel"><h2>🧊 정육면체 전개도 11가지 마스터!</h2>
- <p>전개도 <b>11가지</b>를 외우고, 가짜 전개도를 가려내는 작전이에요. 전개도를 고르면 <b>+${PT_PICK}점</b>, 가짜가 왜 안 되는지 맞히면 <b>보너스 +${PT_BONUS}점</b>!</p>
- <p>번호 <input type="number" id="no" min="1" max="40" value="${U.no||''}"> 이름 <input type="text" id="nm" value="${U.name||''}"></p>
+ <p>전개도 <b>11가지</b>를 외우고, 가짜 전개도를 가려내는 작전이에요. 전개도를 고르면 <b>+${PT_PICK}점</b>, 가짜가 왜 안 되는지 맞히면 <b>보너스 +${PT_BONUS}점</b>! 이후에는 <b>모서리 짝 찾기 5문제</b>에 도전해요. (문제당 +${PT_EDGE}점)</p>
+ <p>번호 <input type="number" id="no" min="1" max="40" value="${U.no||''}"> 이름 <input type="text" id="nm" value="${escapeHtml(U.name||'')}"></p>
  <div class="seg"><label><input type="radio" name="lv" value="쉬움" ${U.lv!=='도전'?'checked':''}><span>🙂 쉬움 (활동지 모양 그대로)</span></label>
  <label><input type="radio" name="lv" value="도전" ${U.lv==='도전'?'checked':''}><span>🔥 도전 (돌리고 뒤집어서)</span></label></div>
  <button class="btn alt" onclick="learn()">📖 11가지 익히기</button><button class="btn" onclick="start()">🚀 작전 시작</button>
@@ -163,7 +231,7 @@ function start(){
  const no=document.getElementById('no').value.trim(),nm=document.getElementById('nm').value.trim();
  if(!no||!nm){alert('번호와 이름을 입력해 주세요!');return;}
  const lv=document.querySelector('[name=lv]:checked').value;U={no,name:nm,lv};localStorage.setItem('cubeUser',JSON.stringify(U));
- G={lv,i:0,score:0,pickOK:0,bonusOK:0,miss:[],t0:Date.now(),deck:shuf(NETS.map((_,i)=>i)).slice(0,ROUNDS)};G.R=buildRound(G.deck[0]);play();}
+ G={lv,i:0,score:0,pickOK:0,bonusOK:0,edgeOK:0,edgeI:0,miss:[],t0:Date.now(),deck:shuf(NETS.map((_,i)=>i)).slice(0,ROUNDS),edgeDeck:shuf(NETS.map((_,i)=>i)).slice(0,EDGE_ROUNDS)};G.R=buildRound(G.deck[0]);play();}
 
 const NUM=['①','②','③','④'];
 function cardsHTML(mode){const R=G.R;
@@ -190,28 +258,58 @@ function reason(k){const t=G.R.cards[G.R.target];let m;
 function feedback(msg,color){head();
  app.innerHTML=`<div class="panel"><div class="msg" style="color:${color}">${msg}</div>${cardsHTML('reveal')}
  <button class="btn" onclick="next()">${G.i+1<ROUNDS?'다음 문제 ▶':'결과 보기 🏁'}</button></div>`;}
-function next(){G.i++;if(G.i>=ROUNDS){finish();return;}G.R=buildRound(G.deck[G.i]);play();}
+function next(){G.i++;if(G.i>=ROUNDS){startEdge();return;}G.R=buildRound(G.deck[G.i]);play();}
+function startEdge(){G.edgeI=0;showEdgeRound();}
+function showEdgeRound(){
+ const cells=sym(NETS[G.edgeDeck[G.edgeI]],G.lv==='도전'?Math.floor(Math.random()*8):0);
+ const edges=edgePairs(cells),eligible=edges.filter(e=>e.partner!==e.id);
+ G.E={cells,edges,target:rnd(eligible).id,answered:false};
+ renderEdge();
+}
+function renderEdge(){const E=G.E;
+ st.textContent=`심화 ${G.edgeI+1}/${EDGE_ROUNDS} · ⭐ ${G.score}점`;
+ app.innerHTML=`<div class="panel"><span class="pill">🔥 심화 단계 ${G.edgeI+1} / ${EDGE_ROUNDS}</span>
+ <h2>🧩 모서리 짝 찾기</h2><div class="q"><b>빨간색 ? 모서리</b>는 정육면체로 접었을 때 어느 모서리와 만날까요?</div>
+ <p class="small">그림의 바깥쪽 선 중 하나를 눌러 보세요. (지금 붙어 있는 칸 사이의 선은 고르지 않아요.)</p>
+ <div class="edgeview">${edgeSvg(E.cells,E.edges,{target:E.target,clickable:true})}</div>
+ <button class="btn alt" onclick="showHint()">💡 힌트</button><div id="hint" class="small"></div></div>`;
+}
+function showHint(){document.getElementById('hint').textContent='모서리에 닿은 면이 접히면 어느 방향을 향할지 생각해 보세요. 서로 멀리 떨어진 선이 만날 수도 있어요!';}
+function chooseEdge(id){const E=G.E;if(!E||E.answered)return;E.answered=true;
+ const match=E.edges[E.target].partner,correct=id===match;
+ if(correct){G.score+=PT_EDGE;G.edgeOK++;}
+ else G.miss.push(`심화 ${G.edgeI+1}번째: 모서리 짝 찾기`);
+ st.textContent=`심화 ${G.edgeI+1}/${EDGE_ROUNDS} · ⭐ ${G.score}점`;
+ app.innerHTML=`<div class="panel"><div class="msg" style="color:${correct?'var(--ok)':'var(--bad)'}">${correct?`🎉 정답! +${PT_EDGE}점`:'❌ 아쉬워요! 정답 모서리를 확인해 보세요.'}</div>
+ <h2>🎨 만나는 모서리는 같은 색!</h2><p>★ 표시가 있는 두 모서리가 서로 만나요. 다른 모서리들도 같은 색끼리 짝이에요.</p>
+ <div class="edgeview">${edgeSvg(E.cells,E.edges,{showAnswer:true,target:E.target,correct:match})}</div>
+ <button class="btn" onclick="nextEdge()">${G.edgeI+1<EDGE_ROUNDS?'다음 심화 문제 ▶':'최종 결과 보기 🏁'}</button></div>`;
+}
+function nextEdge(){G.edgeI++;if(G.edgeI>=EDGE_ROUNDS){finish();return;}showEdgeRound();}
 
 function finish(){
- const sec=Math.round((Date.now()-G.t0)/1000),max=ROUNDS*(PT_PICK+PT_BONUS),stars=G.score>=max*.85?3:G.score>=max*.6?2:1;
- const rec={no:U.no,name:U.name,level:G.lv,score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,sec,miss:G.miss.join(' / ')};
+ const sec=Math.round((Date.now()-G.t0)/1000),max=ROUNDS*(PT_PICK+PT_BONUS)+EDGE_ROUNDS*PT_EDGE,stars=G.score>=max*.85?3:G.score>=max*.6?2:1;
+ const rec={submissionId:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random()),no:U.no,name:U.name,level:G.lv,score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,edgeOK:G.edgeOK,edgeTotal:EDGE_ROUNDS,sec,miss:G.miss.join(' / ')};
  st.textContent=`⭐ ${G.score}점`;
- app.innerHTML=`<div class="panel"><h2>🏁 작전 완료!</h2><div style="font-size:48px">${'⭐'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
- <p style="font-size:30px">${U.name} · <b>${G.score}점</b> / ${max}점</p>
- <p>전개도 고르기 ${G.pickOK}/${ROUNDS} · 이유 보너스 ${G.bonusOK}/${G.pickOK} · ${sec}초</p>
- ${G.miss.length?'<p>복습할 것: '+G.miss.map(m=>`<span class="tag">${m}</span>`).join('')+'</p>':'<p>🎉 하나도 안 틀렸어요!</p>'}
+ app.innerHTML=`<div class="panel"><h2>🏁 큐브 조립 작전 완료!</h2><div style="font-size:48px">${'⭐'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
+ <p style="font-size:30px">${escapeHtml(U.name)} · <b>${G.score}점</b> / ${max}점</p>
+ <p>전개도 고르기 ${G.pickOK}/${ROUNDS} · 이유 보너스 ${G.bonusOK}/${G.pickOK} · 모서리 짝 ${G.edgeOK}/${EDGE_ROUNDS} · ${sec}초</p>
+ ${G.miss.length?'<p>복습할 것: '+G.miss.map(m=>`<span class="tag">${escapeHtml(m)}</span>`).join('')+'</p>':'<p>🎉 하나도 안 틀렸어요!</p>'}
  <div class="small" id="sv">기록 전송 중…</div>
  <button class="btn" onclick="start2()">🔁 다시 하기</button><button class="btn alt" onclick="learn()">📖 11가지 다시 보기</button><button class="btn alt" onclick="home()">🏠 처음으로</button></div>`;
- save(rec);}
+ save(rec);
+}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
 function start2(){G=null;home();}
 
 async function save(rec){
  const log=JSON.parse(localStorage.getItem('cubeLog')||'[]');log.push({...rec,t:new Date().toISOString()});localStorage.setItem('cubeLog',JSON.stringify(log.slice(-50)));
  const el=document.getElementById('sv');
  if(!SCRIPT_URL){el.textContent='💾 이 기기에 저장했어요 (시트 주소 미설정)';return;}
- const q=JSON.parse(localStorage.getItem('cubePending')||'[]');q.push(rec);
+ const q=JSON.parse(localStorage.getItem('cubePending')||'[]');q.push(rec);localStorage.setItem('cubePending',JSON.stringify(q));
  try{for(const r of q)await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(r)});
-  localStorage.removeItem('cubePending');el.textContent='✅ 선생님 시트로 기록을 보냈어요!';}
+  localStorage.removeItem('cubePending');el.textContent='📤 시트로 전송을 요청했어요. (브라우저에서 실제 기록 여부를 확인할 수 없으니 선생님이 시트를 확인해 주세요.)';}
  catch(e){localStorage.setItem('cubePending',JSON.stringify(q));el.textContent='📶 인터넷이 불안정해요. 다음에 접속할 때 다시 보낼게요.';}}
 home();
 </script>
