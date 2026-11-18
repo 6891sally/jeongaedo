@@ -95,10 +95,9 @@ header{gap:10px}header h1{flex:1}.tbtn{font:inherit;font-size:17px;border:2px so
 <body>
 <header><h1>🧊 큐브 조립 작전</h1><div class="st" id="st"></div><button class="tbtn" onclick="teacherEnter()">🧑‍🏫 교사</button></header>
 <main id="app"></main>
-<script src="config.js"></script>
 <script>
-/* ===== 설정: 웹앱 URL은 config.js 에 넣어요 (index.html 은 덮어써도 돼요) ===== */
-const SCRIPT_URL = (window.CUBE_SCRIPT_URL || '').trim() || '';
+/* ===== 설정: 구글 앱스크립트 웹앱 URL(/exec 로 끝나는 주소)을 따옴표 안에 붙여 넣으세요 ===== */
+const SCRIPT_URL = '';
 const PASS = 0.5, PT_OK = 10, PT_BONUS = 5, PT_HINT = 3;
 //CORE
 const K=(r,c)=>r+','+c;
@@ -608,7 +607,7 @@ function stageBtn(s){const r=sres(s.id),ok=unlocked(s);
 function home(){loadP();st.textContent='';
  const album=Object.keys(P.album).length,c1=sw(1),c2=sw(2),bo=sres('B')?sres('B').best:0,tot=c1+c2+bo,sc=STAGES.reduce((a,s)=>a+(sres(s.id)?sres(s.id).stars:0),0),weak=weakTags().length;
  let h=`<div class="panel top"><div><b style="font-size:26px">🙂 ${escapeHtml(U.name)}</b> <span class="small">${U.group}모둠 · ${U.no}번</span></div>
- <div class="stats"><span class="pill">⭐ ${sc}/${STAGES.length*3}</span><span class="pill">🏅 전체 ${tot}점</span><span class="pill">🧊 정육면체 ${c1}점</span><span class="pill">📦 직육면체 ${c2}점</span><span class="pill">📘 도감 ${album}/11</span></div></div>
+ <div class="stats"><span class="pill">⭐ ${sc}/${STAGES.length*3}</span><span class="pill">🏅 전체 ${tot}점</span><span class="pill">🧊 정육면체 ${c1}점</span><span class="pill">📦 직육면체 ${c2}점</span><span class="pill">📘 도감 ${album}/11</span>${SCRIPT_URL&&pendingN()?`<span class="pill gift">⏳ 전송 대기 ${pendingN()}건</span>`:''}</div></div>
  <div class="panel"><button class="btn alt" onclick="learn()">📘 도감·익히기</button><button class="btn alt" onclick="hall()">🏆 명예의 전당</button><button class="btn alt" onclick="badgesView()">🎖 배지</button><button class="btn alt" onclick="switchUser()">👥 다른 친구</button></div>`;
  for(const w of WORLDS){h+=`<div class="panel"><h2>${w.ic} ${w.nm} <span class="small">(${w.sub})</span></h2>${worldOpen(w.id)?'':'<p class="small">🔒 아직 열리지 않았어요. 선생님이 열어 주시면 도전할 수 있어요!</p>'}<div class="stgs">${STAGES.filter(s=>s.w===w.id).map(stageBtn).join('')}</div></div>`;}
  const bossOk=!isClosed('B');
@@ -703,13 +702,34 @@ function badgesView(){st.textContent='';app.innerHTML=`<div class="panel"><h2>�
 
 /* ================= 저장·설정·랭킹 ================= */
 const uid=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random();
-async function flush(){if(!SCRIPT_URL)return false;const q=jget('cubePending2',[]);if(!q.length)return true;
- try{for(const r of q)await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(r)});localStorage.removeItem('cubePending2');return true;}catch(e){return false;}}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* 서버 응답을 읽어서 'ok'/'duplicate'일 때만 대기열에서 지워요. 'busy'·오류·네트워크 실패는 계속 재시도해요. */
+async function postOne(r){
+ try{const res=await fetch(SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(r)});return (await res.text()).trim().slice(0,40);}
+ catch(e){try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(r)});return 'sent?';}catch(e2){return null;}}}
+let _fl=null;
+function flush(){if(!SCRIPT_URL)return Promise.resolve({ok:0,unv:0,left:0});if(_fl)return _fl;
+ _fl=(async()=>{const done=new Set();let ok=0,unv=0;
+  try{const q=jget('cubePending2',[]);
+   for(const r of q){const t=await postOne(r);
+    if(t==='ok'||t==='duplicate'||t==='invalid'){done.add(r.submissionId);ok++;}
+    else if(t==='sent?'){done.add(r.submissionId);unv++;}
+    else if(t==='busy')await sleep(1500);}
+  }finally{const cur=jget('cubePending2',[]).filter(r=>!done.has(r.submissionId));if(cur.length)jset('cubePending2',cur);else{try{localStorage.removeItem('cubePending2');}catch(e){}}
+   _fl=null;}
+  return {ok,unv,left:jget('cubePending2',[]).length};})();
+ return _fl;}
+const pendingN=()=>jget('cubePending2',[]).length;
 async function sendRec(rec){const el=$('sv');
- if(!SCRIPT_URL){if(el)el.textContent='💾 이 기기에 저장했어요 (시트 주소 미설정)';return;}
+ if(!SCRIPT_URL){if(el)el.textContent='💾 이 기기에만 저장했어요 (시트 주소가 비어 있어요)';return;}
  const q=jget('cubePending2',[]);q.push(rec);jset('cubePending2',q);
- const ok=await flush();if(el)el.textContent=ok?'📤 시트로 전송을 요청했어요. (실제 기록 여부는 선생님이 시트에서 확인해요)':'📶 인터넷이 불안정해요. 다음에 접속할 때 다시 보낼게요.';}
-async function fetchConfig(){if(!SCRIPT_URL)return;flush();syncDeleted();
+ if(el)el.textContent='📤 시트로 보내는 중…';
+ const f=await flush();const e2=$('sv');if(!e2)return;
+ e2.textContent=f.left?`⏳ 아직 못 보낸 기록이 ${f.left}건 있어요. 자동으로 다시 보내요. (잠시 기다려 주세요)`:f.unv&&!f.ok?'📤 전송했어요 (시트 응답은 확인할 수 없어요)':'✅ 시트에 저장됐어요!';}
+/* 못 보낸 기록은 20초마다·인터넷이 다시 연결될 때 자동으로 다시 보내요 */
+function retryLoop(){if(!SCRIPT_URL||!pendingN())return;flush().then(()=>{if(document.querySelector('.stgs'))home();});}
+setInterval(retryLoop,20000);window.addEventListener('online',retryLoop);
+async function fetchConfig(){if(!SCRIPT_URL)return;retryLoop();syncDeleted();
  try{const r=await fetch(SCRIPT_URL+'?action=config'),c=await r.json();
   if(c&&c.openWorlds){CFG=Object.assign(CFG,c);if(c.epoch&&c.epoch>jget('cubeEpoch',0)&&document.querySelector('.stgs')){wipeAll(c.epoch);return;}home2();}}catch(e){}}
 let _cfgSig='';function home2(){const sig=JSON.stringify(CFG);if(sig===_cfgSig)return;_cfgSig=sig;if(document.querySelector('.stgs'))home();}
@@ -762,7 +782,8 @@ function renderT(){const cw=classWeak().slice(0,5);const rows=_T.map((x,i)=>{
  app.innerHTML=(SCRIPT_URL?'':'<div class="fb bad"><b>⚠ 시트 주소(SCRIPT_URL)가 비어 있어요.</b> 지금은 이 기기에 저장된 기록만 보이고, 학생들 기록은 시트로 가지 않아요. config.js 에 웹앱 URL을 넣어 주세요.</div>')+cfgPanel()+`<div class="panel"><h3>📉 우리 반이 많이 틀리는 유형 <span class="small">(정답률 낮은 순 · 5문제 이상)</span></h3>${cw.length?weakTxt(cw):'<p class="small">아직 데이터가 부족해요</p>'}</div><div class="panel"><h2>🧑‍🏫 교사 페이지 <span class="small">(학생별 최고점 · 줄을 누르면 스테이지별 점수와 삭제 버튼)</span></h2>
  ${_T.length?`<div class="tscroll"><table class="tb"><tr><th>번호<th>이름<th>모둠<th>전체<th>🧊 정육면체<th>📦 직육면체<th>보스</tr>${rows}</table></div>`:'<p>아직 기록이 없어요</p>'}
  <p class="small">전체 = 정육면체 + 직육면체 + 보스전 (스테이지별 최고점의 합). 삭제해도 시트의 원본 '기록' 탭은 그대로 남아요.</p>
- <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="route()">← 돌아가기</button></div></div>`;}
+ <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tPing()">🔌 연결 점검</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="route()">← 돌아가기</button></div></div>`;}
+async function tPing(){if(!SCRIPT_URL){toast('시트 주소(SCRIPT_URL)가 비어 있어요');return;}try{const r=await fetch(SCRIPT_URL+'?action=config'),j=await r.json();toast(j.ver>=3?'✅ 시트 연결 정상 (서버 v'+j.ver+') · 이 기기 전송 대기 '+pendingN()+'건':'⚠ Apps Script가 예전 버전이에요. 새 버전으로 배포해 주세요');}catch(e){toast('❌ 연결 실패: 웹앱 주소와 배포 권한(모든 사용자)을 확인해 주세요');}}
 function tOpen(i){_To=_To===i?-1:i;renderT();}
 async function tPost(o){if(!SCRIPT_URL)return true;o.pw=TPW;o.submissionId=uid();
  try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});return true;}catch(e){toast('전송하지 못했어요. 인터넷을 확인해 주세요.');return false;}}
