@@ -88,14 +88,17 @@ button.card{cursor:pointer}button.card:active:not(:disabled){transform:scale(.97
 @media(max-width:760px){.grid.g11{grid-template-columns:repeat(2,1fr)}.opts{grid-template-columns:1fr}.two{grid-template-columns:1fr}.dice{grid-template-columns:repeat(2,1fr)}}
 @media(prefers-reduced-motion:reduce){.card.target{animation:none}}
 .wk{margin-bottom:6px;padding:6px 10px;background:#fff3bf;border-radius:12px}
+header{gap:10px}header h1{flex:1}.tbtn{font:inherit;font-size:17px;border:2px solid #ffffff66;border-radius:12px;background:transparent;color:#fff;padding:6px 12px;min-height:40px;cursor:pointer}
+.toast{display:none;position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2b4f;color:#fff;padding:14px 22px;border-radius:16px;font-size:20px;z-index:50;max-width:92vw;text-align:center}
 </style>
 </head>
 <body>
-<header><h1 onclick="titleTap()">🧊 큐브 조립 작전</h1><div class="st" id="st"></div></header>
+<header><h1>🧊 큐브 조립 작전</h1><div class="st" id="st"></div><button class="tbtn" onclick="teacherEnter()">🧑‍🏫 교사</button></header>
 <main id="app"></main>
+<script src="config.js"></script>
 <script>
-/* ===== 설정: 구글 앱스크립트 웹앱 URL을 따옴표 안에 붙여 넣으세요 ===== */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1lzoEHH8VThUpFGIR_nxD7qSGrGWgQgwmrZGe6E_g6Y7BRD0NwUX8dVdBt3QWUFQWfQ/exec';
+/* ===== 설정: 웹앱 URL은 config.js 에 넣어요 (index.html 은 덮어써도 돼요) ===== */
+const SCRIPT_URL = (window.CUBE_SCRIPT_URL || '').trim() || '';
 const PASS = 0.5, PT_OK = 10, PT_BONUS = 5, PT_HINT = 3;
 //CORE
 const K=(r,c)=>r+','+c;
@@ -261,7 +264,7 @@ const newP=()=>({stages:{},album:{},badges:{},hist:{},totalOK:0,totalQ:0,bonusOK
 const pkey=()=>'cube2:'+U.no+'|'+U.name;
 function loadP(){P=Object.assign(newP(),jget(pkey(),{}));}
 function saveP(){jset(pkey(),P);}
-const teacher=()=>jget('cubeTeacher',false);
+
 function lv(tag){const h=((P&&P.hist[tag])||[]).slice(-6);if(h.length<3)return 0;const r=h.reduce((a,b)=>a+b,0)/h.length;return r>=.85?2:r>=.6?1:0;}
 const tfor=L=>L===0?0:L===1?ri(0,3):ri(0,7);
 function netIdx(){if(!G)G={};if(!G.bag||!G.bag.length)G.bag=shuf(NETS.map((_,i)=>i));return G.bag.pop();}
@@ -567,9 +570,9 @@ const BADGES={combo5:['🔥','연속 5문제 정답'],bonus5:['🎁','이유 보
 const expand=plan=>plan.flatMap(([t,n])=>Array(n).fill(t));
 const stageById=id=>id==='B'?BOSS:id==='R'?REVIEW:STAGES.find(s=>s.id===id);
 const sres=id=>P.stages[id]||null;
-const worldOpen=w=>teacher()||(CFG.openWorlds||[1,2]).includes(w);
+const worldOpen=w=>(CFG.openWorlds||[1,2]).includes(w);
 const isClosed=id=>(CFG.closed||[]).includes(id);
-function unlocked(s){if(teacher())return true;return worldOpen(s.w)&&!isClosed(s.id);}
+function unlocked(s){return worldOpen(s.w)&&!isClosed(s.id);}
 const passedCount=()=>STAGES.filter(s=>sres(s.id)&&sres(s.id).stars>=1).length;
 function weakTags(){return Object.keys(P.hist).map(t=>({t,m:(P.hist[t]||[]).slice(-10).filter(x=>!x).length})).filter(x=>x.m>0).sort((a,b)=>b.m-a.m);}
 function reviewPlan(){const w=weakTags();if(!w.length)return[];const out=[];let i=0;while(out.length<8){const tg=w[i%w.length],ts=TAG2TYPES[tg.t];out.push(rnd(ts));i++;}return out;}
@@ -578,15 +581,17 @@ const stars=n=>'⭐'.repeat(n)+'☆'.repeat(3-n);
 
 /* ================= 첫 화면 ================= */
 const app=$('app'),st=$('st');
-let tapCount=0;
 let TPW='';
-async function tAuth(){const pw=prompt('교사 비밀번호를 입력하세요');if(pw==null)return false;const p=pw.trim();
- if(!SCRIPT_URL){if(p!=='0520'){alert('비밀번호가 달라요');return false;}TPW=p;return true;}
- try{const r=await fetch(SCRIPT_URL+'?action=tverify&pw='+encodeURIComponent(p)),j=await r.json();if(j&&j.ok){TPW=p;return true;}alert('비밀번호가 달라요');}catch(e){alert('시트에 연결하지 못했어요. 인터넷을 확인해 주세요.');}
- return false;}
-async function titleTap(){tapCount++;if(tapCount>=5){tapCount=0;
- if(teacher()){jset('cubeTeacher',false);TPW='';alert('🔒 선생님 모드 해제');route();return;}
- if(await tAuth()){jset('cubeTeacher',true);alert('🔓 선생님 모드: 모든 월드·스테이지가 열리고, 홈에 교사 페이지 버튼이 생겨요');route();}}}
+function toast(m){let t=$('toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=m;t.style.display='block';clearTimeout(toast._t);toast._t=setTimeout(()=>{t.style.display='none';},3500);}
+let _ask='',_askT=0;function tAsk(id,msg){if(_ask===id&&Date.now()-_askT<6000){_ask='';return true;}_ask=id;_askT=Date.now();toast(msg+'  ➜ 같은 버튼을 한 번 더 누르면 실행돼요');return false;}
+/* 비밀번호는 창(prompt) 대신 화면 안에서 입력해요 (태블릿 브라우저가 팝업을 막아도 동작) */
+function teacherEnter(msg){if(TPW){teacherPage();return;}st.textContent='';
+ app.innerHTML=`<div class="panel"><h2>🧑‍🏫 교사 확인</h2><p>비밀번호를 입력하세요.</p>${msg?`<p style="color:#e8590c">${msg}</p>`:''}<p><input type="password" id="tpw" inputmode="numeric" maxlength="12" autocomplete="off" onkeydown="if(event.key==='Enter')tLogin()"> <button class="btn" onclick="tLogin()">확인</button></p><button class="btn alt" onclick="route()">← 돌아가기</button></div>`;
+ setTimeout(()=>{const e=$('tpw');if(e)e.focus();},50);}
+async function tLogin(){const p=($('tpw').value||'').trim();if(!p)return;
+ if(!SCRIPT_URL){if(p!=='0520'){teacherEnter('비밀번호가 달라요.');return;}TPW=p;teacherPage();return;}
+ try{const r=await fetch(SCRIPT_URL+'?action=tverify&pw='+encodeURIComponent(p)),j=await r.json();if(j&&j.ok){TPW=p;teacherPage();return;}teacherEnter('비밀번호가 달라요.');}
+ catch(e){teacherEnter('시트에 연결하지 못했어요. 인터넷, 웹앱 주소(config.js), 새 버전 배포를 확인해 주세요.');}}
 function route(){if(!U.no||!U.name)login();else home();}
 function login(){st.textContent='';
  app.innerHTML=`<div class="panel"><h2>🧊 큐브 조립 작전</h2><p>정육면체·직육면체 <b>전개도</b>를 마스터하는 게임이에요. 이름을 알려 주세요!</p>
@@ -602,11 +607,11 @@ function stageBtn(s){const r=sres(s.id),ok=unlocked(s);
  return `<button class="stg ${ok?'':'lock'} ${r&&r.stars?'done':''}" ${ok?`onclick="startStage('${s.id}')"`:'disabled'}><span class="ic">${ok?s.ic:'🔒'}</span><b>${s.id} ${s.nm}</b><span class="small">${s.ds}</span><span class="stars">${r?stars(r.stars):''}</span>${r?`<span class="small">최고 ${r.best}점</span>`:''}</button>`;}
 function home(){loadP();st.textContent='';
  const album=Object.keys(P.album).length,c1=sw(1),c2=sw(2),bo=sres('B')?sres('B').best:0,tot=c1+c2+bo,sc=STAGES.reduce((a,s)=>a+(sres(s.id)?sres(s.id).stars:0),0),weak=weakTags().length;
- let h=`<div class="panel top"><div><b style="font-size:26px">🙂 ${escapeHtml(U.name)}</b> <span class="small">${U.group}모둠 · ${U.no}번</span>${teacher()?' <span class="pill">🔓 선생님 모드</span>':''}</div>
+ let h=`<div class="panel top"><div><b style="font-size:26px">🙂 ${escapeHtml(U.name)}</b> <span class="small">${U.group}모둠 · ${U.no}번</span></div>
  <div class="stats"><span class="pill">⭐ ${sc}/${STAGES.length*3}</span><span class="pill">🏅 전체 ${tot}점</span><span class="pill">🧊 정육면체 ${c1}점</span><span class="pill">📦 직육면체 ${c2}점</span><span class="pill">📘 도감 ${album}/11</span></div></div>
- <div class="panel"><button class="btn alt" onclick="learn()">📘 도감·익히기</button><button class="btn alt" onclick="hall()">🏆 명예의 전당</button><button class="btn alt" onclick="badgesView()">🎖 배지</button><button class="btn alt" onclick="switchUser()">👥 다른 친구</button>${teacher()?'<button class="btn" onclick="teacherPage()">🧑‍🏫 교사 페이지</button>':''}</div>`;
+ <div class="panel"><button class="btn alt" onclick="learn()">📘 도감·익히기</button><button class="btn alt" onclick="hall()">🏆 명예의 전당</button><button class="btn alt" onclick="badgesView()">🎖 배지</button><button class="btn alt" onclick="switchUser()">👥 다른 친구</button></div>`;
  for(const w of WORLDS){h+=`<div class="panel"><h2>${w.ic} ${w.nm} <span class="small">(${w.sub})</span></h2>${worldOpen(w.id)?'':'<p class="small">🔒 아직 열리지 않았어요. 선생님이 열어 주시면 도전할 수 있어요!</p>'}<div class="stgs">${STAGES.filter(s=>s.w===w.id).map(stageBtn).join('')}</div></div>`;}
- const bossOk=teacher()||!isClosed('B');
+ const bossOk=!isClosed('B');
  h+=`<div class="panel"><div class="stgs"><button class="stg ${bossOk?'':'lock'}" ${bossOk?`onclick="startStage('B')"`:'disabled'}><span class="ic">${bossOk?'👑':'🔒'}</span><b>보스전</b><span class="small">${bossOk?BOSS.ds:'선생님이 열어 주시면 도전할 수 있어요'}</span></button>
  <button class="stg ${weak?'':'lock'}" ${weak?`onclick="startStage('R')"`:'disabled'}><span class="ic">📝</span><b>오답 노트</b><span class="small">${weak?'틀린 유형 '+weak+'가지 다시 풀기':'아직 틀린 유형이 없어요'}</span></button></div></div>`;
  app.innerHTML=h;fetchConfig();}
@@ -724,12 +729,12 @@ let _T=[],_To=-1;
 function aggLocal(rows){const by={};rows.forEach(r=>{const w=wOf(r.stage);if(!w)return;const k=r.no+'|'+r.name,x=by[k]||(by[k]={no:r.no,name:r.name,group:r.group,stages:{}});x.stages[r.stage]=Math.max(x.stages[r.stage]||0,r.score);});
  return Object.values(by).map(tcalc).sort((a,b)=>(+a.no||0)-(+b.no||0));}
 function tcalc(x){x.c1=0;x.c2=0;x.b=0;for(const k in x.stages){const w=wOf(k);if(w==='c1')x.c1+=x.stages[k];else if(w==='c2')x.c2+=x.stages[k];else x.b+=x.stages[k];}x.total=x.c1+x.c2+x.b;return x;}
-async function teacherPage(){if(!TPW&&!(await tAuth()))return;st.textContent='';
+async function teacherPage(){if(!TPW){teacherEnter();return;}st.textContent='';
  app.innerHTML='<div class="panel"><h2>🧑‍🏫 교사 페이지</h2><p>불러오는 중…</p></div>';let list=null;
  if(SCRIPT_URL){try{const r=await fetch(SCRIPT_URL+'?action=teacher&pw='+encodeURIComponent(TPW)),j=await r.json();
-   if(j&&j.error){TPW='';alert('비밀번호가 바뀌었어요. 다시 들어와 주세요.');home();return;}if(j&&j.students){list=j.students;if(j.config)CFG=Object.assign(CFG,j.config);}}catch(e){}}
+   if(j&&j.error){TPW='';teacherEnter('비밀번호가 바뀌었어요. 다시 입력해 주세요.');return;}if(j&&j.students){list=j.students;if(j.config)CFG=Object.assign(CFG,j.config);}}catch(e){}}
  else list=aggLocal(jget('cubeLog2',[]));
- if(!list){app.innerHTML='<div class="panel"><h2>🧑‍🏫 교사 페이지</h2><p>시트에서 불러오지 못했어요. 인터넷과 배포(새 버전)를 확인해 주세요.</p><button class="btn" onclick="teacherPage()">다시 시도</button><button class="btn alt" onclick="home()">← 돌아가기</button></div>';return;}
+ if(!list){app.innerHTML='<div class="panel"><h2>🧑‍🏫 교사 페이지</h2><p>시트에서 불러오지 못했어요. 인터넷과 배포(새 버전)를 확인해 주세요.</p><button class="btn" onclick="teacherPage()">다시 시도</button><button class="btn alt" onclick="route()">← 돌아가기</button></div>';return;}
  _T=list;_To=-1;renderT();}
 const WEAK_MIN=3;
 function weakOf(x){return Object.keys(x.tags||{}).map(k=>({k,n:x.tags[k][0],ok:x.tags[k][1],r:x.tags[k][1]/x.tags[k][0]})).filter(w=>w.n>=WEAK_MIN).sort((a,b)=>a.r-b.r||b.n-a.n);}
@@ -754,23 +759,23 @@ function renderT(){const cw=classWeak().slice(0,5);const rows=_T.map((x,i)=>{
    r+=`<tr class="det"><td colspan="7"><div class="wk"><b>🎯 약한 유형</b> ${wk.length?weakTxt(wk):(ws.length?'<span class="small">70% 미만인 유형이 없어요 👍</span>':'<span class="small">문제 기록이 아직 부족해요 (시트에 연결돼 있어야 해요)</span>')}</div>${ids.length?ids.map(s=>`<span class="tchip">${s.id} ${escapeHtml(s.nm||'')}: <b>${x.stages[s.id]}</b> <button class="btn sm alt" onclick="event.stopPropagation();tDel(${i},'${s.id}')">삭제</button></span>`).join(''):'<span class="small">기록이 없어요</span>'}
    <div><button class="btn sm" style="background:#e8590c;box-shadow:0 4px 0 #a63e07" onclick="event.stopPropagation();tDel(${i},'*')">🗑 ${escapeHtml(x.name)} 점수 전부 삭제</button></div></td></tr>`;}
   return r;}).join('');
- app.innerHTML=cfgPanel()+`<div class="panel"><h3>📉 우리 반이 많이 틀리는 유형 <span class="small">(정답률 낮은 순 · 5문제 이상)</span></h3>${cw.length?weakTxt(cw):'<p class="small">아직 데이터가 부족해요</p>'}</div><div class="panel"><h2>🧑‍🏫 교사 페이지 <span class="small">(학생별 최고점 · 줄을 누르면 스테이지별 점수와 삭제 버튼)</span></h2>
+ app.innerHTML=(SCRIPT_URL?'':'<div class="fb bad"><b>⚠ 시트 주소(SCRIPT_URL)가 비어 있어요.</b> 지금은 이 기기에 저장된 기록만 보이고, 학생들 기록은 시트로 가지 않아요. config.js 에 웹앱 URL을 넣어 주세요.</div>')+cfgPanel()+`<div class="panel"><h3>📉 우리 반이 많이 틀리는 유형 <span class="small">(정답률 낮은 순 · 5문제 이상)</span></h3>${cw.length?weakTxt(cw):'<p class="small">아직 데이터가 부족해요</p>'}</div><div class="panel"><h2>🧑‍🏫 교사 페이지 <span class="small">(학생별 최고점 · 줄을 누르면 스테이지별 점수와 삭제 버튼)</span></h2>
  ${_T.length?`<div class="tscroll"><table class="tb"><tr><th>번호<th>이름<th>모둠<th>전체<th>🧊 정육면체<th>📦 직육면체<th>보스</tr>${rows}</table></div>`:'<p>아직 기록이 없어요</p>'}
  <p class="small">전체 = 정육면체 + 직육면체 + 보스전 (스테이지별 최고점의 합). 삭제해도 시트의 원본 '기록' 탭은 그대로 남아요.</p>
- <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="home()">← 돌아가기</button></div></div>`;}
+ <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="route()">← 돌아가기</button></div></div>`;}
 function tOpen(i){_To=_To===i?-1:i;renderT();}
 async function tPost(o){if(!SCRIPT_URL)return true;o.pw=TPW;o.submissionId=uid();
- try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});return true;}catch(e){alert('전송하지 못했어요. 인터넷을 확인해 주세요.');return false;}}
+ try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});return true;}catch(e){toast('전송하지 못했어요. 인터넷을 확인해 주세요.');return false;}}
 async function tDel(i,stage){const x=_T[i];
- if(!confirm(stage==='*'?`${x.no}번 ${x.name}의 점수를 전부 지울까요?`:`${x.no}번 ${x.name}의 ${stage} 점수를 지울까요?`))return;
+ if(!tAsk('d'+x.no+stage,stage==='*'?`${x.no}번 ${x.name}의 점수를 전부 지워요.`:`${x.no}번 ${x.name}의 ${stage} 점수를 지워요.`))return;
  if(!await tPost({teacherDelete:true,no:x.no,name:x.name,group:x.group,stage}))return;
  if(!SCRIPT_URL){jset('cubeLog2',jget('cubeLog2',[]).filter(r=>!(String(r.no)===String(x.no)&&r.name===x.name&&(stage==='*'||r.stage===stage))));}
  if(stage==='*')_T.splice(i,1),_To=-1;else{delete x.stages[stage];tcalc(x);}
  renderT();}
-async function tResetAll(){if(!confirm('반 전체 점수를 모두 초기화할까요?\n학생 기기의 점수도 다음 접속 때 지워져요.'))return;if(!confirm('정말이에요? 되돌릴 수 없어요.'))return;
+async function tResetAll(){if(!tAsk('reset','반 전체 점수를 모두 초기화해요. 학생 기기도 다음 접속 때 지워져요.'))return;
  if(!await tPost({teacherReset:true}))return;
  if(!SCRIPT_URL){Object.keys(localStorage).filter(k=>k.indexOf('cube2:')===0||k==='cubeLog2').forEach(k=>localStorage.removeItem(k));P=newP();}
- alert('초기화했어요. 잠시 뒤 새로고침하면 비어 있어요.');_T=[];renderT();}
+ toast('초기화했어요.');_T=[];renderT();}
 function maskName(no,name){const n=String(name||'');return no+'번 '+n.slice(0,1)+'○'.repeat(Math.min(Math.max(n.length-1,1),2));}
 const wOf=id=>/^1-/.test(id)?'c1':/^2-/.test(id)?'c2':id==='B'?'b':null;
 function boards(rows){const by={};
