@@ -90,6 +90,9 @@ button.card{cursor:pointer}button.card:active:not(:disabled){transform:scale(.97
 .wk{margin-bottom:6px;padding:6px 10px;background:#fff3bf;border-radius:12px}
 header{gap:10px}header h1{flex:1}.tbtn{font:inherit;font-size:17px;border:2px solid #ffffff66;border-radius:12px;background:transparent;color:#fff;padding:6px 12px;min-height:40px;cursor:pointer}
 .toast{display:none;position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2b4f;color:#fff;padding:14px 22px;border-radius:16px;font-size:20px;z-index:50;max-width:92vw;text-align:center}
+.tb.tt{font-size:17px;margin:4px 0 10px}.tb.tt th,.tb.tt td{padding:4px 8px}.tb.tt th{position:static}
+.tb.gt{font-size:17px}.tb.gt th,.tb.gt td{padding:6px 8px;white-space:nowrap}.tb.gt td:first-child,.tb.gt th:first-child{position:sticky;left:0;background:#fff;z-index:1}.tb.gt th:first-child{background:#eef4ff}.tb.gt td.e{color:#b6c0dc}.tb.gt tr.none td{color:#9aa6c4}
+.tp{display:flex;flex-direction:column}.tp>.panel:nth-child(1){order:3}.tp>.panel:nth-child(2){order:2}.tp>.panel:nth-child(3){order:1}
 </style>
 </head>
 <body>
@@ -97,7 +100,7 @@ header{gap:10px}header h1{flex:1}.tbtn{font:inherit;font-size:17px;border:2px so
 <main id="app"></main>
 <script>
 /* ===== 설정: 구글 앱스크립트 웹앱 URL(/exec 로 끝나는 주소)을 따옴표 안에 붙여 넣으세요 ===== */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1lzoEHH8VThUpFGIR_nxD7qSGrGWgQgwmrZGe6E_g6Y7BRD0NwUX8dVdBt3QWUFQWfQ/exec';
+const SCRIPT_URL = '';
 const PASS = 0.5, PT_OK = 10, PT_BONUS = 5, PT_HINT = 3;
 //CORE
 const K=(r,c)=>r+','+c;
@@ -685,7 +688,7 @@ function finishStage(){const sec=Math.round((Date.now()-G.t0)/1000),acc=G.ok/G.n
  saveP();
  const rec={submissionId:(window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random()),no:U.no,name:U.name,group:U.group,stage:id,level:'자동',score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,edgeOK:G.edgeOK,edgeTotal:G.plan.filter(t=>t==='edge-meet').length,
   sec,miss:G.miss.join(' / '),nq:G.n,nok:G.ok,album:Object.keys(P.album).length,hints:G.hints,answers:G.ans};
- const log=jget('cubeLog2',[]);log.push({no:U.no,name:U.name,group:U.group,stage:id,score:G.score,nok:G.ok,album:rec.album,t:Date.now()});jset('cubeLog2',log.slice(-300));
+ const log=jget('cubeLog2',[]);log.push({no:U.no,name:U.name,group:U.group,stage:id,score:G.score,nok:G.ok,nq:G.n,sec,album:rec.album,t:Date.now()});jset('cubeLog2',log.slice(-300));
  st.textContent=`⭐ ${G.score}점`;
  const nxt=(()=>{if(!/^\d-\d$/.test(id))return null;const s=STAGES[STAGES.findIndex(x=>x.id===id)+1];return s&&s.w===G.st.w&&s3>=1&&unlocked(s)?s:null;})();
  app.innerHTML=`<div class="panel"><h2>🏁 ${G.st.nm} 완료!</h2><div style="font-size:52px">${stars(s3)}</div>
@@ -746,7 +749,7 @@ async function syncDeleted(){if(!SCRIPT_URL||!U.no||!P)return;
   P.chk=j.now;saveP();if(ch&&document.querySelector('.stgs'))home();}catch(e){}}
 /* ================= 교사 페이지 ================= */
 let _T=[],_To=-1;
-function aggLocal(rows){const by={};rows.forEach(r=>{const w=wOf(r.stage);if(!w)return;const k=r.no+'|'+r.name,x=by[k]||(by[k]={no:r.no,name:r.name,group:r.group,stages:{}});x.stages[r.stage]=Math.max(x.stages[r.stage]||0,r.score);});
+function aggLocal(rows){const by={};rows.forEach(r=>{const k=r.no+'|'+r.name,x=by[k]||(by[k]={no:r.no,name:r.name,group:r.group,stages:{},tries:[]});x.tries.push({t:r.t||0,s:r.stage,p:r.score,n:r.nq||0,ok:r.nok||0,sec:r.sec||0});if(!wOf(r.stage))return;x.stages[r.stage]=Math.max(x.stages[r.stage]||0,r.score);});
  return Object.values(by).map(tcalc).sort((a,b)=>(+a.no||0)-(+b.no||0));}
 function tcalc(x){x.c1=0;x.c2=0;x.b=0;for(const k in x.stages){const w=wOf(k);if(w==='c1')x.c1+=x.stages[k];else if(w==='c2')x.c2+=x.stages[k];else x.b+=x.stages[k];}x.total=x.c1+x.c2+x.b;return x;}
 async function teacherPage(){if(!TPW){teacherEnter();return;}st.textContent='';
@@ -756,6 +759,10 @@ async function teacherPage(){if(!TPW){teacherEnter();return;}st.textContent='';
  else list=aggLocal(jget('cubeLog2',[]));
  if(!list){app.innerHTML='<div class="panel"><h2>🧑‍🏫 교사 페이지</h2><p>시트에서 불러오지 못했어요. 인터넷과 배포(새 버전)를 확인해 주세요.</p><button class="btn" onclick="teacherPage()">다시 시도</button><button class="btn alt" onclick="route()">← 돌아가기</button></div>';return;}
  _T=list;_To=-1;renderT();}
+const fmtT=t=>{if(!t)return'-';const d=new Date(t);return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const fmtS=s=>s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'-';
+function triesHtml(x){const t=(x.tries||[]).slice().sort((a,b)=>b.t-a.t);if(!t.length)return'';
+ return `<div class="tscroll"><b>📜 모든 시도 (${t.length}회, 최신순)</b><table class="tb tt"><tr><th>시각<th>스테이지<th>점수<th>맞힌 수<th>시간</tr>${t.map(a=>{const sn=(stageById(a.s)||{}).nm||'';return `<tr><td>${fmtT(a.t)}</td><td>${a.s} ${escapeHtml(sn)}</td><td><b>${a.p}</b></td><td>${a.n?a.ok+'/'+a.n:'-'}</td><td>${fmtS(a.sec)}</td></tr>`;}).join('')}</table></div>`;}
 const WEAK_MIN=3;
 function weakOf(x){return Object.keys(x.tags||{}).map(k=>({k,n:x.tags[k][0],ok:x.tags[k][1],r:x.tags[k][1]/x.tags[k][0]})).filter(w=>w.n>=WEAK_MIN).sort((a,b)=>a.r-b.r||b.n-a.n);}
 function classWeak(){const m={};_T.forEach(x=>{for(const k in x.tags||{}){const a=m[k]||(m[k]=[0,0]);a[0]+=x.tags[k][0];a[1]+=x.tags[k][1];}});
@@ -771,18 +778,28 @@ function cfgPanel(){const cl=CFG.closed||[];
 function tAll(w,on){document.querySelectorAll('.cs.w'+w).forEach(c=>c.checked=on);}
 async function tSaveCfg(){const closed=[...document.querySelectorAll('.cs')].filter(c=>!c.checked).map(c=>c.value);
  if(!await tPost({teacherConfig:true,closed}))return;CFG=Object.assign(CFG,{closed});$('cfgmsg').textContent='✅ 저장했어요 (닫힌 스테이지 '+closed.length+'개)';}
+let _tv='grid';
+function gridHtml(){const maxNo=Math.max(0,..._T.map(x=>+x.no||0)),size=Math.min(60,Math.max(maxNo,parseInt(jget('cubeClassN',0))||0));
+ const by={};_T.forEach(x=>{(by[x.no]=by[x.no]||[]).push(x);});const cols=STAGES.concat([BOSS]);
+ const cell=(x,id)=>{const t=(x.tries||[]).filter(a=>a.s===id).sort((a,b)=>a.t-b.t);if(!t.length)return'<td class="e">·</td>';const mx=Math.max(...t.map(a=>a.p));let bi=t.findIndex(a=>a.p===mx);
+  return `<td>${t.map((a,i)=>i===bi?`<b>${a.p}</b>`:a.p).join('→')}</td>`;};
+ let rows='';for(let no=1;no<=size;no++){const ps=by[no]||[null];ps.forEach(x=>{rows+=x?`<tr><td>${escapeHtml(String(no))}</td><td>${escapeHtml(x.name)}</td><td>${x.group||'-'}</td>${cols.map(s=>cell(x,s.id)).join('')}<td><b>${x.total}</b></td></tr>`:`<tr class="none"><td>${no}</td><td>-</td><td>-</td>${cols.map(()=>'<td class="e">·</td>').join('')}<td>0</td></tr>`;});}
+ const extra=_T.filter(x=>!(+x.no>=1&&+x.no<=size));
+ return `<p class="small">1번부터 차례로 · 칸 안의 숫자는 그 스테이지의 <b>모든 시도 점수</b>(오래된 순 →)이고 굵은 글씨가 최고점이에요. 학급 인원 <input type="number" min="1" max="60" style="width:90px;font-size:18px;padding:4px 8px" value="${size}" onchange="jset('cubeClassN',+this.value||0);renderT()">명</p>
+ <div class="tscroll"><table class="tb gt"><tr><th>번호<th>이름<th>모둠${cols.map(s=>`<th>${s.id==='B'?'👑보스':s.id}`).join('')}<th>전체</tr>${rows}</table></div>
+ <p class="small">${cols.map(s=>`${s.id==='B'?'보스':s.id} ${escapeHtml(s.nm||'')}`).join(' · ')}</p>${extra.length?`<p class="small">번호 범위 밖: ${extra.map(x=>escapeHtml(x.no+'번 '+x.name)).join(', ')}</p>`:''}`;}
 function renderT(){const cw=classWeak().slice(0,5);const rows=_T.map((x,i)=>{
   const open=i===_To;
-  let r=`<tr class="${open?'on':''}" onclick="tOpen(${i})"><td>${escapeHtml(String(x.no))}</td><td>${escapeHtml(x.name)}</td><td>${x.group||'-'}</td><td><b>${x.total}</b></td><td>${x.c1}</td><td>${x.c2}</td><td>${x.b}</td></tr>`;
+  let r=`<tr class="${open?'on':''}" onclick="tOpen(${i})"><td>${escapeHtml(String(x.no))}</td><td>${escapeHtml(x.name)}</td><td>${x.group||'-'}</td><td>${(x.tries||[]).length}회</td><td><b>${x.total}</b></td><td>${x.c1}</td><td>${x.c2}</td><td>${x.b}</td></tr>`;
   if(open){const ids=STAGES.concat([BOSS]).filter(s=>x.stages[s.id]!=null);
    const ws=weakOf(x),wk=ws.filter(w=>w.r<.7).slice(0,6);
-   r+=`<tr class="det"><td colspan="7"><div class="wk"><b>🎯 약한 유형</b> ${wk.length?weakTxt(wk):(ws.length?'<span class="small">70% 미만인 유형이 없어요 👍</span>':'<span class="small">문제 기록이 아직 부족해요 (시트에 연결돼 있어야 해요)</span>')}</div>${ids.length?ids.map(s=>`<span class="tchip">${s.id} ${escapeHtml(s.nm||'')}: <b>${x.stages[s.id]}</b> <button class="btn sm alt" onclick="event.stopPropagation();tDel(${i},'${s.id}')">삭제</button></span>`).join(''):'<span class="small">기록이 없어요</span>'}
+   r+=`<tr class="det"><td colspan="8"><div class="wk"><b>🎯 약한 유형</b> ${wk.length?weakTxt(wk):(ws.length?'<span class="small">70% 미만인 유형이 없어요 👍</span>':'<span class="small">문제 기록이 아직 부족해요 (시트에 연결돼 있어야 해요)</span>')}</div>${triesHtml(x)}${ids.length?ids.map(s=>`<span class="tchip">${s.id} ${escapeHtml(s.nm||'')}: <b>${x.stages[s.id]}</b> <button class="btn sm alt" onclick="event.stopPropagation();tDel(${i},'${s.id}')">삭제</button></span>`).join(''):'<span class="small">기록이 없어요</span>'}
    <div><button class="btn sm" style="background:#e8590c;box-shadow:0 4px 0 #a63e07" onclick="event.stopPropagation();tDel(${i},'*')">🗑 ${escapeHtml(x.name)} 점수 전부 삭제</button></div></td></tr>`;}
   return r;}).join('');
- app.innerHTML=(SCRIPT_URL?'':'<div class="fb bad"><b>⚠ 시트 주소(SCRIPT_URL)가 비어 있어요.</b> 지금은 이 기기에 저장된 기록만 보이고, 학생들 기록은 시트로 가지 않아요. config.js 에 웹앱 URL을 넣어 주세요.</div>')+cfgPanel()+`<div class="panel"><h3>📉 우리 반이 많이 틀리는 유형 <span class="small">(정답률 낮은 순 · 5문제 이상)</span></h3>${cw.length?weakTxt(cw):'<p class="small">아직 데이터가 부족해요</p>'}</div><div class="panel"><h2>🧑‍🏫 교사 페이지 <span class="small">(학생별 최고점 · 줄을 누르면 스테이지별 점수와 삭제 버튼)</span></h2>
- ${_T.length?`<div class="tscroll"><table class="tb"><tr><th>번호<th>이름<th>모둠<th>전체<th>🧊 정육면체<th>📦 직육면체<th>보스</tr>${rows}</table></div>`:'<p>아직 기록이 없어요</p>'}
- <p class="small">전체 = 정육면체 + 직육면체 + 보스전 (스테이지별 최고점의 합). 삭제해도 시트의 원본 '기록' 탭은 그대로 남아요.</p>
- <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tPing()">🔌 연결 점검</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="route()">← 돌아가기</button></div></div>`;}
+ app.innerHTML=(SCRIPT_URL?'':'<div class="fb bad"><b>⚠ 시트 주소(SCRIPT_URL)가 비어 있어요.</b> 지금은 이 기기에 저장된 기록만 보이고, 학생들 기록은 시트로 가지 않아요. index.html 맨 위의 SCRIPT_URL 에 웹앱 주소를 넣어 주세요.</div>')+'<div class="tp">'+cfgPanel()+`<div class="panel"><h3>📉 우리 반이 많이 틀리는 유형 <span class="small">(정답률 낮은 순 · 5문제 이상)</span></h3>${cw.length?weakTxt(cw):'<p class="small">아직 데이터가 부족해요</p>'}</div><div class="panel"><h2>🧑‍🏫 교사 페이지 <span class="small">(줄을 누르면 모든 시도와 스테이지별 최고점, 삭제 버튼)</span></h2>
+ <div><button class="btn sm ${_tv==='grid'?'':'alt'}" onclick="_tv='grid';renderT()">📋 명단 점수표</button><button class="btn sm ${_tv==='list'?'':'alt'}" onclick="_tv='list';renderT()">👤 학생별 상세</button></div>${_tv==='grid'?gridHtml():_T.length?`<div class="tscroll"><table class="tb"><tr><th>번호<th>이름<th>모둠<th>시도<th>전체<th>🧊 정육면체<th>📦 직육면체<th>보스</tr>${rows}</table></div>`:'<p>아직 기록이 없어요</p>'}
+ <p class="small">전체 = 한 스테이지라도 한 만큼의 최고점 합 (정육면체 + 직육면체 + 보스전, 안 한 스테이지는 0점). 오답노트 시도도 '모든 시도'에는 보여요. 삭제해도 시트의 원본 '기록' 탭은 그대로 남아요.</p>
+ <div><button class="btn" onclick="teacherPage()">🔄 새로고침</button><button class="btn alt" onclick="tPing()">🔌 연결 점검</button><button class="btn alt" onclick="tResetAll()">⚠ 반 전체 초기화</button><button class="btn alt" onclick="route()">← 돌아가기</button></div></div></div>`;}
 async function tPing(){if(!SCRIPT_URL){toast('시트 주소(SCRIPT_URL)가 비어 있어요');return;}try{const r=await fetch(SCRIPT_URL+'?action=config'),j=await r.json();toast(j.ver>=3?'✅ 시트 연결 정상 (서버 v'+j.ver+') · 이 기기 전송 대기 '+pendingN()+'건':'⚠ Apps Script가 예전 버전이에요. 새 버전으로 배포해 주세요');}catch(e){toast('❌ 연결 실패: 웹앱 주소와 배포 권한(모든 사용자)을 확인해 주세요');}}
 function tOpen(i){_To=_To===i?-1:i;renderT();}
 async function tPost(o){if(!SCRIPT_URL)return true;o.pw=TPW;o.submissionId=uid();
