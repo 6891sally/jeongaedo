@@ -515,9 +515,15 @@ function mkShape(cells,t){const c=sym(cells,t),a=analyze(c);return{cells:c,a,kin
 function cardHTML(c,i,S,sizes){const svgs=sizes?netSvg(c.cells,{cw:sizes.cw,rh:sizes.rh,S:sizes.S,a:c.a,reveal:S.done&&c.kind==='net',pad:8}):svg(c.cells,c.a,{reveal:S.done});
  return `<span class="no">${sizes?GA[i]:NUM[i]}</span><div class="nsvg">${svgs}</div>${S.done?`<div class="cap">${why(c)}</div>`:''}`;}
 function cardsGrid(cards,S,mark,sizesOf){return '<div class="figgrid">'+cards.map((c,i)=>`<div class="ncard ${mark===i?'target':''}">${cardHTML(c,i,S,sizesOf?sizesOf[i]:null)}</div>`).join('')+'</div>';}
-function reasonFollow(cards,target,keys,sizesOf){const t=cards[target],opts=shuf(keys);
- return{bonus:true,tag:'전개도판별',type:'reason',kind:'choice',optClass:'btns',prompt:`<b>${sizesOf?GA[target]:NUM[target]}</b>(주황 테두리)은 왜 전개도가 <b>아닐까요?</b>`,
-  figFn:S=>cardsGrid(cards,{done:false},target,sizesOf),options:opts.map(k=>({html:()=>REASONS[k]})),answer:new Set([String(opts.indexOf(t.kind))]),explain:()=>why(t)};}
+/* 전개도가 아닌 이유를 모두 계산: 모양 이유(겹침·면 개수·꼭짓점) + 직육면체라면 맞닿는 변 길이 불일치까지 */
+function reasonsOf(c,sz){const out=[c.kind];
+ if(sz&&c.kind!=='mismatch'&&c.kind!=='vertex'&&!sizesValid(c.cells,sz.cw,sz.rh))out.push('mismatch');
+ return out;}
+function reasonFollow(cards,target,keys,sizesOf){const t=cards[target],opts=shuf(keys),sz=sizesOf?sizesOf[target]:null;
+ const right=reasonsOf(t,sz).filter(k=>keys.includes(k)),multi=right.length>1;
+ return{bonus:true,tag:'전개도판별',type:'reason',kind:'choice',optClass:'btns',prompt:`<b>${sizesOf?GA[target]:NUM[target]}</b>(주황 테두리)은 왜 전개도가 <b>아닐까요?</b>${sizesOf?'<span class="sub">맞는 이유가 여러 개면 아무거나 하나 골라도 돼요.</span>':''}`,
+  figFn:S=>cardsGrid(cards,{done:false},target,sizesOf),options:opts.map(k=>({html:()=>REASONS[k]})),answer:new Set(right.map(k=>String(opts.indexOf(k)))),
+  explain:()=>multi?`이유가 ${right.length}가지예요: ${right.map(k=>REASONS[k]).join(' / ')}. 어느 것을 골라도 정답이에요.`:why(t),meta:{card:t,sz,opts,keys}};}
 
 function genNetPick(){const L=lv('전개도판별'),idx=netIdx(),good=mkShape(NETS[idx],tfor(L));
  const fk=(L===0?fakes(3,true):fakes(3,false,['overlap','overlap',null])).map(f=>mkShape(f,ri(0,7)));
@@ -731,10 +737,20 @@ const jdel=k=>{try{localStorage.removeItem(k)}catch(e){}};
 const RM=()=>!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
 const K_USER='cg3User',K_PEND='cg3Pending',K_LOG='cg3Log',K_EPOCH='cg3Epoch',K_CFG='cg3Cfg';
 const uid=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);
-let U=jget(K_USER,{}),P=null,G=null,CFG=Object.assign({openWorlds:[1,2],closed:[],classN:0,epoch:0},jget(K_CFG,{}));
+const CLASSES=['1','2','3','4','5'];   // 반 목록 (Code.gs 의 CLASSES 와 같게)
+const cfgOf=c=>Object.assign({openWorlds:[1,2],closed:[],classN:0,epoch:0},jget(K_CFG+c,{}));
+let U=jget(K_USER,{}),P=null,G=null,CFG=cfgOf(U.cls||'');
 const newP=()=>({created:Date.now(),stages:{},album:{},badges:{},hist:{},totalOK:0,totalQ:0,bonusOK:0,edgeOK:0});
-const pkey=()=>'cg3:P:'+U.no+'|'+U.name;
-function loadP(){P=Object.assign(newP(),jget(pkey(),{}));}
+const pkey=()=>'cg3:P:'+U.cls+'|'+U.no+'|'+U.name;
+const sameUser=r=>String(r.cls)===String(U.cls)&&String(r.no)===String(U.no)&&r.name===U.name;
+function loadP(){
+ // 반 구분 이전(2반만 쓰던 버전)의 이 기기 진행 상황을 2반으로 한 번 옮겨요
+ if(U.cls==='2'&&jget(pkey(),null)==null){const old=jget('cg3:P:'+U.no+'|'+U.name,null);if(old){jset(pkey(),old);jdel('cg3:P:'+U.no+'|'+U.name);}
+  if(jget(K_EPOCH+'2',null)==null&&jget(K_EPOCH,null)!=null)jset(K_EPOCH+'2',jget(K_EPOCH,0));
+  jset(K_LOG,jget(K_LOG,[]).map(r=>r.cls?r:Object.assign(r,{cls:'2'})));}
+ P=Object.assign(newP(),jget(pkey(),{}));}
+// 초기화·삭제 시각 이전의 스테이지만 지우고, 그 뒤에 푼 스테이지는 남겨요
+function keepAfter(p,t){const keep={};for(const s in p.stages)if((p.stages[s].t||0)>=t)keep[s]=p.stages[s];return Object.assign(newP(),{stages:keep});}
 function saveP(){jset(pkey(),P);}
 const sres=id=>P&&P.stages[id]||null;
 const worldOpen=w=>(CFG.openWorlds||[1,2]).includes(w);
@@ -746,7 +762,10 @@ const sumW=w=>STAGES.filter(s=>s.w===w).reduce((a,s)=>a+(sres(s.id)?sres(s.id).b
 const myScores=()=>{const c1=sumW(1),c2=sumW(2),b=sres('B')?sres('B').best:0;return{c1,c2,b,total:c1+c2+b};};
 const starTxt=n=>'★'.repeat(n)+'☆'.repeat(3-n);
 // 예전 버전의 못 보낸 기록이 있으면 새 대기열로 옮겨요 (기록 유실 방지)
-(function migrate(){const old=jget('cubePending2',null);if(!old||!old.length)return;const q=jget(K_PEND,[]),ids=new Set(q.map(r=>r.submissionId));old.forEach(r=>{if(!ids.has(r.submissionId))q.push(r);});if(jset(K_PEND,q))jdel('cubePending2');})();
+// 반 구분이 없던 예전 기록(2반만 쓰던 시기)은 2반으로 보내요
+(function migrate(){const q=jget(K_PEND,[]),ids=new Set(q.map(r=>r.submissionId)),old=jget('cubePending2',[]);let ch=false;
+ (old||[]).forEach(r=>{if(!ids.has(r.submissionId)){q.push(r);ch=true;}});q.forEach(r=>{if(!r.cls){r.cls='2';ch=true;}});
+ if(ch&&jset(K_PEND,q))jdel('cubePending2');})();
 
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast._t);toast._t=setTimeout(()=>{t.style.display='none';},3500);}
 /* 위험한 버튼은 "같은 버튼 한 번 더 누르기"로 확인 (prompt/confirm 안 씀) */
@@ -760,25 +779,32 @@ const teacherBtn='<button class="tbtn" onclick="teacherEnter()">🧑‍🏫 교�
 /* =====================================================================
    6. 로그인
    ===================================================================== */
-let _lgNo=null;
-function route(){if(!U.no||!U.name)login();else home();}
-function login(){G=null;_lgNo=U.no?+U.no:null;const N=Math.max(1,Math.min(40,+CFG.classN||30)),cols=N>30?8:6;
+let _lgNo=null,_lgCls=null,_lgName=null;
+function route(){if(!U.cls||!U.no||!U.name)login();else home();}
+function login(fresh){G=null;if(fresh!==false){_lgCls=U.cls||null;_lgNo=U.no?+U.no:null;_lgName=U.name||'';}
+ const N=Math.max(1,Math.min(40,+(_lgCls?cfgOf(_lgCls).classN:0)||30)),cols=N>30?8:6;
  app.innerHTML=`<div class="bar"><div class="ttl">🧊 큐브 조립 작전</div><div class="sp"></div>${teacherBtn}</div>${warnBar()}
  <div class="login">
-  <div class="card" style="flex:1.25;padding:18px;display:flex;flex-direction:column;min-height:0"><h2>① 내 번호를 눌러요</h2>
-   <div class="nogrid" style="grid-template-columns:repeat(${cols},1fr)">${Array.from({length:N},(_,i)=>`<button class="nob ${_lgNo===i+1?'on':''}" data-no="${i+1}" onclick="pickNo(${i+1})">${i+1}</button>`).join('')}</div></div>
-  <div class="card" style="flex:1;padding:18px;display:flex;flex-direction:column"><h2>② 내 이름을 써요</h2>
-   <input class="nmin" id="nm" maxlength="10" autocomplete="off" placeholder="이름" value="${esc(U.name||'')}" onkeydown="if(event.key==='Enter')doLogin()">
+  <div class="card" style="flex:1.25;padding:16px 18px;display:flex;flex-direction:column;min-height:0">
+   <h2>① 우리 반을 눌러요</h2>
+   <div class="nogrid" style="grid-template-columns:repeat(${CLASSES.length},1fr);margin-bottom:12px">${CLASSES.map(c=>`<button class="nob cb ${_lgCls===c?'on':''}" data-cls="${c}" onclick="pickCls('${c}')">${c}반</button>`).join('')}</div>
+   <h2>② 내 번호를 눌러요</h2>
+   ${_lgCls?`<div class="nogrid" style="grid-template-columns:repeat(${cols},1fr)">${Array.from({length:N},(_,i)=>`<button class="nob ${_lgNo===i+1?'on':''}" data-no="${i+1}" onclick="pickNo(${i+1})">${i+1}</button>`).join('')}</div>`:'<div class="lockmsg">먼저 우리 반을 눌러 주세요</div>'}</div>
+  <div class="card" style="flex:1;padding:18px;display:flex;flex-direction:column"><h2>③ 내 이름을 써요</h2>
+   <input class="nmin" id="nm" maxlength="10" autocomplete="off" placeholder="이름" value="${esc(_lgName||'')}" oninput="_lgName=this.value" onkeydown="if(event.key==='Enter')doLogin()">
    <div class="lgmsg" id="lgmsg"></div>
    <button class="btn big" onclick="doLogin()">🚀 시작하기</button>
    <div class="sp"></div>
-   <p class="small">정육면체·직육면체의 전개도를 익히는 게임이에요.<br>${SCRIPT_URL?'끝낸 기록은 선생님 구글 시트로 보내져요.':'지금은 연습 모드예요.'}</p></div>
+   <p class="small">정육면체·직육면체의 전개도를 익히는 게임이에요.<br>${SCRIPT_URL?'끝낸 기록은 선생님 구글 시트(우리 반 탭)로 보내져요.':'지금은 연습 모드예요.'}</p></div>
  </div>`;}
-function pickNo(n){_lgNo=n;document.querySelectorAll('.nob').forEach(b=>b.classList.toggle('on',+b.dataset.no===n));}
+async function pickCls(c){_lgCls=c;if(_lgNo&&_lgNo>Math.max(+cfgOf(c).classN||30,1))_lgNo=null;login(false);
+ if(SCRIPT_URL){try{const j=await apiGet('config&cls='+c);if(j&&j.ver){jset(K_CFG+c,{openWorlds:j.openWorlds||[1,2],closed:j.closed||[],classN:+j.classN||0,epoch:+j.epoch||0});if($('nm')&&_lgCls===c)login(false);}}catch(e){}}}
+function pickNo(n){_lgNo=n;document.querySelectorAll('.nob[data-no]').forEach(b=>b.classList.toggle('on',+b.dataset.no===n));}
 function doLogin(){const nm=($('nm').value||'').trim().replace(/\s+/g,' ');
- if(!_lgNo){$('lgmsg').textContent='번호를 먼저 눌러 주세요!';return;}
+ if(!_lgCls){$('lgmsg').textContent='우리 반을 먼저 눌러 주세요!';return;}
+ if(!_lgNo){$('lgmsg').textContent='번호를 눌러 주세요!';return;}
  if(!nm){$('lgmsg').textContent='이름을 써 주세요!';$('nm').focus();return;}
- U={no:String(_lgNo),name:nm};jset(K_USER,U);loadP();_sel=null;home();}
+ U={cls:_lgCls,no:String(_lgNo),name:nm};jset(K_USER,U);CFG=cfgOf(U.cls);loadP();_sel=null;home();}
 
 /* =====================================================================
    7. 홈 = 월드 지도
@@ -791,7 +817,7 @@ function recommend(){const s=STAGES.find(s=>stageOpen(s.id)&&!(sres(s.id)&&sres(
 function nodeHtml(s){const id=s.id,[x,y]=NODE_XY[id],r=sres(id),open=stageOpen(id),rec=recommend();
  const cls=['node',!open?'lock':'',r&&r.stars?'done':'',open&&id===rec&&!(r&&r.stars)?'now':'',id===_sel?'sel':'',id==='B'?'boss':''].join(' ');
  return `<button class="${cls}" style="left:${x}px;top:${y}px" onclick="selStage('${id}')" aria-label="${id} ${s.nm}${open?'':' 닫힘'}"><span class="c">${open?s.ic:'🔒'}<small>${id==='B'?'보스':id}</small></span><span class="nm">${s.nm}</span><span class="st">${!open?'선생님이 닫음':r?starTxt(r.stars):'☆☆☆'}</span></button>`;}
-function home(){if(!U.no){login();return;}loadP();G=null;drawHome();syncServer();}
+function home(){if(!U.cls||!U.no){login();return;}CFG=cfgOf(U.cls);loadP();G=null;drawHome();syncServer();}
 function drawHome(){if(!P)loadP();if(!_sel)_sel=recommend()||'1-1';
  const sc=myScores(),album=Object.keys(P.album).length,nb=Object.keys(P.badges).length,wk=weakTags().length,stars=[...STAGES,BOSS].reduce((a,s)=>a+(sres(s.id)?sres(s.id).stars:0),0);
  const pts=[...STAGES,BOSS].map(s=>NODE_XY[s.id]);
@@ -803,7 +829,7 @@ function drawHome(){if(!P)loadP();if(!_sel)_sel=recommend()||'1-1';
   <button class="rb" onclick="badgesView()"><span class="i">🎖️</span>배지 ${nb}</button>
   <button class="rb" onclick="selStage('R')"><span class="i">📝</span>오답 노트${wk?`<span class="n">${wk}</span>`:''}</button>
   <div class="sp"></div>
-  <div class="me"><div style="font-size:30px">🙂</div>${esc(U.no)}번<br>${esc(U.name)}</div>
+  <div class="me"><div style="font-size:30px">🙂</div>${esc(U.cls)}반 ${esc(U.no)}번<br>${esc(U.name)}</div>
   <button class="rb" style="min-height:56px" onclick="login()"><span class="i" style="font-size:20px">👥</span>바꾸기</button>
  </nav>
  <div class="hmain">
@@ -925,9 +951,9 @@ function finishStage(){const sec=Math.round((Date.now()-G.t0)/1000),acc=G.ok/G.n
  if(s3===3&&id!=='R')give('perfect');if(s3===3&&G.hints===0&&id!=='R')give('nohint');if(id==='R'&&G.ok===G.n)give('review');if(id==='B'&&s3>=1)give('boss');
  if(STAGES.filter(s=>s.w===1).every(s=>sres(s.id)&&sres(s.id).stars>=1))give('w1');if(STAGES.filter(s=>s.w===2).every(s=>sres(s.id)&&sres(s.id).stars>=1))give('w2');
  saveP();
- const rec={submissionId:uid(),ct:Date.now(),no:U.no,name:U.name,stage:id,level:'자동',score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,edgeOK:G.edgeOK,edgeTotal:G.plan.filter(t=>t==='edge-meet').length,
+ const rec={submissionId:uid(),ct:Date.now(),cls:U.cls,no:U.no,name:U.name,stage:id,level:'자동',score:G.score,pickOK:G.pickOK,bonusOK:G.bonusOK,edgeOK:G.edgeOK,edgeTotal:G.plan.filter(t=>t==='edge-meet').length,
   sec,miss:G.miss.join(' / '),nq:G.n,nok:G.ok,album:Object.keys(P.album).length,hints:G.hints,answers:G.ans};
- const log=jget(K_LOG,[]);log.push({no:U.no,name:U.name,stage:id,score:G.score,nok:G.ok,nq:G.n,sec,t:rec.ct,types:G.ans.map(a=>[a.type,a.ok])});jset(K_LOG,log.slice(-400));
+ const log=jget(K_LOG,[]);log.push({cls:U.cls,no:U.no,name:U.name,stage:id,score:G.score,nok:G.ok,nq:G.n,sec,t:rec.ct,types:G.ans.map(a=>[a.type,a.ok])});jset(K_LOG,log.slice(-400));
  if(SCRIPT_URL){const q=jget(K_PEND,[]);q.push(rec);jset(K_PEND,q);}
  const idx=STAGES.findIndex(x=>x.id===id),nxt=idx>=0?STAGES.slice(idx+1).find(s=>stageOpen(s.id)):null;
  const st=G.st,n=G.n,ok=G.ok,score=G.score,hints=G.hints,bonus=G.bonusOK,mc=G.maxCombo,newAlbum=G.newAlbum,miss=G.miss.length;G=null;
@@ -991,23 +1017,24 @@ async function apiGet(action){const r=await fetch(SCRIPT_URL+'?action='+action);
 let _syncT=0;
 async function syncServer(){if(!SCRIPT_URL)return;retryLoop();
  let changed=false;
- try{const c=await apiGet('config');if(c&&c.ver){const before=JSON.stringify(CFG);CFG={openWorlds:c.openWorlds||[1,2],closed:c.closed||[],classN:+c.classN||0,epoch:+c.epoch||0};jset(K_CFG,CFG);
-   if(CFG.epoch>jget(K_EPOCH,0)){wipeBefore(CFG.epoch);jset(K_EPOCH,CFG.epoch);changed=true;}
+ const cls=U.cls;if(!cls)return;
+ try{const c=await apiGet('config&cls='+cls);if(c&&c.ver&&U.cls===cls){const before=JSON.stringify(CFG);CFG={openWorlds:c.openWorlds||[1,2],closed:c.closed||[],classN:+c.classN||0,epoch:+c.epoch||0};jset(K_CFG+cls,CFG);
+   if(CFG.epoch>jget(K_EPOCH+cls,0)){wipeBefore(cls,CFG.epoch);jset(K_EPOCH+cls,CFG.epoch);changed=true;}
    if(before!==JSON.stringify(CFG))changed=true;}}catch(e){}
- if(U.no&&P){try{const j=await apiJSON({action:'me',no:U.no,name:U.name});if(j&&j.del&&applyDeletes(j.del))changed=true;}catch(e){}}
+ if(U.no&&P&&U.cls===cls){try{const j=await apiJSON({action:'me',cls,no:U.no,name:U.name});if(j&&j.del&&U.cls===cls&&applyDeletes(j.del))changed=true;}catch(e){}}
  if(changed&&onHome())drawHome();}
 const onHome=()=>!!$('mapbox');
 setInterval(()=>{if(onHome())syncServer();},60000);
 /* 반 전체 초기화: 초기화 시각 이전에 한 점수·별·도감을 이 기기에서 지워요 */
-function wipeBefore(ep){try{Object.keys(localStorage).filter(k=>k.indexOf('cg3:P:')===0).forEach(k=>{const p=jget(k,null);if(!p)return;if((p.created||0)<ep){jdel(k);}else{let ch=false;for(const s in p.stages)if((p.stages[s].t||0)<ep){delete p.stages[s];ch=true;}if(ch)jset(k,p);}});}catch(e){}
- jset(K_LOG,jget(K_LOG,[]).filter(r=>(r.t||0)>=ep));if(U.no)loadP();}
+function wipeBefore(cls,ep){try{Object.keys(localStorage).filter(k=>k.indexOf('cg3:P:'+cls+'|')===0).forEach(k=>{const p=jget(k,null);if(!p)return;if((p.created||0)<ep){jset(k,keepAfter(p,ep));}else{let ch=false;for(const s in p.stages)if((p.stages[s].t||0)<ep){delete p.stages[s];ch=true;}if(ch)jset(k,p);}});}catch(e){}
+ jset(K_LOG,jget(K_LOG,[]).filter(r=>String(r.cls)!==String(cls)||(r.t||0)>=ep));if(U.no)loadP();}
 /* 교사가 지운 점수(스테이지 하나 또는 전부)를 이 기기에서도 지워요 */
 function applyDeletes(del){let ch=false;
  for(const k in del){const t=del[k];
-  if(k==='*'){if((P.created||0)<t){P=newP();ch=true;}else for(const s in P.stages)if((P.stages[s].t||0)<t){delete P.stages[s];ch=true;}
-   jset(K_LOG,jget(K_LOG,[]).filter(r=>!(String(r.no)===String(U.no)&&r.name===U.name&&(r.t||0)<t)));}
+  if(k==='*'){if((P.created||0)<t){P=keepAfter(P,t);ch=true;}else for(const s in P.stages)if((P.stages[s].t||0)<t){delete P.stages[s];ch=true;}
+   jset(K_LOG,jget(K_LOG,[]).filter(r=>!(sameUser(r)&&(r.t||0)<t)));}
   else{if(P.stages[k]&&(P.stages[k].t||0)<t){delete P.stages[k];ch=true;}
-   jset(K_LOG,jget(K_LOG,[]).filter(r=>!(String(r.no)===String(U.no)&&r.name===U.name&&r.stage===k&&(r.t||0)<t)));}}
+   jset(K_LOG,jget(K_LOG,[]).filter(r=>!(sameUser(r)&&r.stage===k&&(r.t||0)<t)));}}
  if(ch)saveP();return ch;}
 
 /* =====================================================================
@@ -1033,11 +1060,11 @@ const MEDAL=['🥇','🥈','🥉','4','5'];
 function board(title,list){return `<div class="board"><h3>${title}</h3>${list&&list.length?'<ol>'+list.map((x,i)=>`<li><span>${MEDAL[i]}</span><span class="nm">${esc(x.n)}</span><b>${x.v}점</b></li>`).join('')+'</ol>':'<p class="small">아직 기록이 없어요</p>'}</div>`;}
 let _B=null,_hs='1-1',_hsrc='';
 async function hall(){app.innerHTML=subBar('🏆 명예의 전당')+'<div class="page"><p>불러오는 중…</p></div>';let b=null,src='이 기기 기록';
- if(SCRIPT_URL){try{const j=await apiGet('ranking');if(j&&j.overall){b=j;src='우리 반 전체';}}catch(e){}}
- if(!b){b=boardsFromLog(jget(K_LOG,[]));if(SCRIPT_URL)src='이 기기 기록 (시트에 연결하지 못했어요)';}
+ if(SCRIPT_URL){try{const j=await apiGet('ranking&cls='+U.cls);if(j&&j.overall){b=j;src=U.cls+'반';}}catch(e){}}
+ if(!b){b=boardsFromLog(jget(K_LOG,[]).filter(r=>String(r.cls)===String(U.cls)));if(SCRIPT_URL)src='이 기기 기록 (시트에 연결하지 못했어요)';}
  _B=b;drawHall(src);}
 function drawHall(src){if(src!==undefined)_hsrc=src;src=_hsrc;const b=_B,st=b.stage||{};
- app.innerHTML=subBar(`🏆 명예의 전당 <span style="font-size:17px;opacity:.8">${esc(src||'')}</span>`)+`<div class="page" style="flex-direction:column;gap:10px">
+ app.innerHTML=subBar(`🏆 ${esc(U.cls)}반 명예의 전당 <span style="font-size:17px;opacity:.8">${src===U.cls+'반'?'':esc(src||'')}</span>`)+`<div class="page" style="flex-direction:column;gap:10px">
  <div class="small">이름은 가려서 보여요. 스테이지마다 가장 높았던 점수를 더해요. 전체 = 정육면체 + 직육면체 + 보스전</div>
  <div class="boards">${board('🥇 전체 최고점',b.overall)}${board('🧊 정육면체 최고점',b.cube)}${board('📦 직육면체 최고점',b.cuboid)}</div>
  <div style="font-size:21px">🎯 스테이지별 최고점</div>
@@ -1047,28 +1074,34 @@ function drawHall(src){if(src!==undefined)_hsrc=src;src=_hsrc;const b=_B,st=b.st
 /* =====================================================================
    12. 교사 페이지 (업무용)
    ===================================================================== */
-let TPW='',_T=[],_TC={},_tab='grid',_tsel=null,_tlocal=false;
-function teacherEnter(msg){
+let TPW='',TCLS='',TADMIN=false,_T=[],_TC={},_tab='grid',_tsel=null,_tlocal=false,_tPick=null;
+function teacherEnter(msg){if(!msg)_tPick=U.cls||_tPick||null;
  app.innerHTML=`<div class="bar"><button class="x" onclick="route()">← 돌아가기</button><div class="ttl">🧑‍🏫 교사 확인</div></div>${warnBar()}
- <div class="page" style="justify-content:center;align-items:center"><div class="card" style="padding:24px;width:520px">
-  <div style="font-size:24px;margin-bottom:10px">교사 비밀번호를 입력하세요</div>
+ <div class="page" style="justify-content:center;align-items:center"><div class="card" style="padding:24px;width:560px">
+  <div style="font-size:24px;margin-bottom:10px">① 관리할 반</div>
+  <div class="nogrid" style="grid-template-columns:repeat(${CLASSES.length},1fr);margin-bottom:14px">${CLASSES.map(c=>`<button class="nob ${_tPick===c?'on':''}" data-tcls="${c}" onclick="_tPick='${c}';document.querySelectorAll('[data-tcls]').forEach(b=>b.classList.toggle('on',b.dataset.tcls==='${c}'))">${c}반</button>`).join('')}</div>
+  <div style="font-size:24px;margin-bottom:10px">② 교사 비밀번호</div>
   <input class="nmin" type="password" id="tpw" inputmode="numeric" maxlength="12" autocomplete="off" onkeydown="if(event.key==='Enter')tLogin()">
   <div class="lgmsg" id="tmsg">${msg?esc(msg):''}</div>
   <div class="acts"><button class="btn w" onclick="route()">취소</button><button class="btn" onclick="tLogin()">확인</button></div>
   ${SCRIPT_URL?'':'<p class="small">시트 주소가 비어 있어 비밀번호를 서버에서 확인할 수 없어요. 연습 모드에서는 비밀번호 없이 이 기기 기록만 볼 수 있어요.</p>'}
  </div></div>`;setTimeout(()=>{const e=$('tpw');if(e)e.focus();},50);}
 async function tLogin(){const p=($('tpw').value||'').trim();
- if(!SCRIPT_URL){TPW='local';_tlocal=true;teacherPage();return;}
+ if(!_tPick){$('tmsg').textContent='관리할 반을 먼저 눌러 주세요.';return;}
+ if(!SCRIPT_URL){TPW='local';TCLS=_tPick;TADMIN=true;_tlocal=true;_tab='grid';_tsel=null;teacherPage();return;}
  if(!p){$('tmsg').textContent='비밀번호를 입력하세요.';return;}
  $('tmsg').textContent='확인 중…';
- try{const j=await apiJSON({action:'tverify',pw:p});if(j&&j.ok){TPW=p;_tlocal=false;teacherPage();return;}teacherEnter('비밀번호가 달라요.');}
+ try{const j=await apiJSON({action:'tverify',cls:_tPick,pw:p});if(j&&j.ok){TPW=p;TCLS=_tPick;TADMIN=!!j.admin;_tlocal=false;_tab='grid';_tsel=null;teacherPage();return;}teacherEnter('비밀번호가 달라요.');}
  catch(e){teacherEnter('시트에 연결하지 못했어요. 인터넷, 웹앱 주소, "새 버전" 배포를 확인해 주세요.');}}
+// 반별 설정을 이 기기에도 저장 (그 반 학생이 쓰는 기기라면 바로 반영)
+function keepCfg(c,o){const v=Object.assign(cfgOf(c),o);jset(K_CFG+c,v);if(U.cls===c)CFG=v;}
+function tSwitch(c){TCLS=c;_tsel=null;teacherPage();}
 async function teacherPage(){if(!TPW){teacherEnter();return;}G=null;
- app.innerHTML='<div class="tp"><div class="tbar"><span class="ttl">🧑‍🏫 교사 페이지</span>불러오는 중…</div></div>';
- if(_tlocal){_T=aggLocal(jget(K_LOG,[]));_TC={openWorlds:CFG.openWorlds,closed:CFG.closed||[],classN:CFG.classN||0};drawT();return;}
- try{const j=await apiJSON({action:'teacher',pw:TPW});
-  if(j&&j.error==='badpw'){TPW='';teacherEnter('비밀번호가 바뀌었어요. 다시 입력해 주세요.');return;}
-  _T=j.students||[];_TC=j.config||{};CFG=Object.assign(CFG,{openWorlds:_TC.openWorlds||[1,2],closed:_TC.closed||[],classN:+_TC.classN||0});jset(K_CFG,CFG);drawT();}
+ app.innerHTML=`<div class="tp"><div class="tbar"><span class="ttl">🧑‍🏫 ${TCLS}반 교사 페이지</span>불러오는 중…</div></div>`;
+ if(_tlocal){const k=cfgOf(TCLS);_T=aggLocal(jget(K_LOG,[]).filter(r=>String(r.cls)===TCLS));_TC={openWorlds:k.openWorlds,closed:k.closed||[],classN:k.classN||0};drawT();return;}
+ try{const j=await apiJSON({action:'teacher',cls:TCLS,pw:TPW});
+  if(j&&j.error==='badpw'){TPW='';teacherEnter('비밀번호가 바뀌었거나 이 반 비밀번호가 아니에요. 다시 입력해 주세요.');return;}
+  _T=j.students||[];_TC=j.config||{};keepCfg(TCLS,{openWorlds:_TC.openWorlds||[1,2],closed:_TC.closed||[],classN:+_TC.classN||0});drawT();}
  catch(e){app.innerHTML=`<div class="tp"><div class="tbar"><span class="ttl">🧑‍🏫 교사 페이지</span><button class="tb2" onclick="route()">← 학생 화면</button></div><div class="tbody"><p>시트에서 불러오지 못했어요. 인터넷과 배포(새 버전, 액세스: 모든 사용자)를 확인해 주세요.</p><div><button class="tb2 pri" onclick="teacherPage()">다시 시도</button></div></div></div>`;}}
 function aggLocal(rows){const by={};rows.forEach(r=>{const k=r.no+'|'+r.name,x=by[k]||(by[k]={no:r.no,name:r.name,stages:{},tries:[],types:{}});
   x.tries.push({t:r.t||0,s:r.stage,p:r.score,n:r.nq||0,ok:r.nok||0,sec:r.sec||0});(r.types||[]).forEach(([ty,ok])=>{const a=x.types[ty]||(x.types[ty]=[0,0]);a[0]++;if(ok)a[1]++;});
@@ -1085,7 +1118,8 @@ const COLS=[...STAGES,BOSS];
 function drawT(){const tabs=[['grid','📋 명단 점수표'],['weak','📉 많이 틀리는 유형'],['cfg','⚙ 스테이지 열기·닫기'],['admin','🔧 관리']];
  let body='';
  if(_tab==='grid')body=gridView();else if(_tab==='weak')body=weakView();else if(_tab==='cfg')body=cfgView();else body=adminView();
- app.innerHTML=`<div class="tp"><div class="tbar"><span class="ttl">🧑‍🏫 교사 페이지</span>${tabs.map(t=>`<button class="ttab ${_tab===t[0]?'on':''}" onclick="_tab='${t[0]}';_tsel=null;drawT()">${t[1]}</button>`).join('')}<div class="sp"></div><button class="tb2" onclick="teacherPage()">🔄 새로고침</button><button class="tb2" onclick="TPW='';route()">← 학생 화면</button></div>
+ const sw=TADMIN?`<select class="tb2" aria-label="반 바꾸기" onchange="tSwitch(this.value)">${CLASSES.map(c=>`<option value="${c}" ${c===TCLS?'selected':''}>${c}반</option>`).join('')}</select>`:'';
+ app.innerHTML=`<div class="tp"><div class="tbar"><span class="ttl">🧑‍🏫 ${TCLS}반 교사 페이지</span>${sw}${tabs.map(t=>`<button class="ttab ${_tab===t[0]?'on':''}" onclick="_tab='${t[0]}';_tsel=null;drawT()">${t[1]}</button>`).join('')}<div class="sp"></div><button class="tb2" onclick="teacherPage()">🔄 새로고침</button><button class="tb2" onclick="TPW='';route()">← 학생 화면</button></div>
  ${SCRIPT_URL?'':'<div class="warnbar">⚠ 시트 주소(SCRIPT_URL)가 비어 있어요. 학생 기록이 시트로 가지 않고, 지금은 이 기기에 저장된 기록만 보여요. index.html 맨 위 SCRIPT_URL에 웹앱 주소를 넣어 주세요.</div>'}
  <div class="tbody">${body}</div>${_tsel!==null&&_T[_tsel]?drawer(_T[_tsel]):''}</div>`;}
 function classN(){return Math.max(+_TC.classN||0,0)||Math.max(0,..._T.map(x=>+x.no||0),25);}
@@ -1121,33 +1155,33 @@ function cfgView(){const cl=_TC.closed||[],ow=_TC.openWorlds||[1,2];
 function tAll(w,on){document.querySelectorAll('.cs.w'+w).forEach(c=>{c.checked=on;c.parentNode.classList.toggle('off',!on);});}
 function adminView(){return `<div class="cfgw"><h4>🔌 연결 점검</h4><button class="tb2 pri" onclick="tPing()">연결 점검</button> <span class="tmsg" id="pingmsg"></span>
   <div class="tnote" style="margin-top:6px">서버(Apps Script) 버전과 이 기기의 전송 대기 건수를 확인해요. 이 기기 전송 대기: <b>${SCRIPT_URL?pendingN():0}건</b></div></div>
- <div class="cfgw"><h4>⚠ 반 전체 초기화</h4><button class="tb2 red" onclick="tResetAll(this)">반 전체 점수 초기화</button> <span class="tmsg" id="rstmsg"></span>
-  <div class="tnote" style="margin-top:6px">명예의 전당과 교사 페이지의 점수가 모두 0부터 다시 시작해요. 학생 기기의 점수·별도 다음 접속 때 지워져요. 시트의 원본 기록은 지우지 않고 '초기화' 탭에 시각만 남겨요. (버튼을 한 번 더 눌러야 실행)</div></div>`;}
-async function tPost(o){if(_tlocal)return 'ok';o.pw=TPW;o.submissionId=uid();
+ <div class="cfgw"><h4>⚠ ${TCLS}반 전체 초기화</h4><button class="tb2 red" onclick="tResetAll(this)">${TCLS}반 전체 점수 초기화</button> <span class="tmsg" id="rstmsg"></span>
+  <div class="tnote" style="margin-top:6px">${TCLS}반의 명예의 전당과 교사 페이지 점수가 0부터 다시 시작해요. 다른 반은 그대로예요. ${TCLS}반 학생 기기의 점수·별도 다음 접속 때 지워져요. 시트의 원본 기록은 지우지 않고 '${TCLS}반 초기화' 탭에 시각만 남겨요. (버튼을 한 번 더 눌러야 실행)</div></div>`;}
+async function tPost(o){if(_tlocal)return 'ok';o.pw=TPW;o.cls=TCLS;o.submissionId=uid();
  try{return await apiText(o);}
  catch(e){try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(o)});return 'sent?';}catch(e2){return null;}}}
 function tResult(t,el){const m=t==='ok'?'✅ 저장했어요':t==='sent?'?'📤 보냈어요 (응답 확인 불가 · 새로고침으로 확인해 주세요)':t==='badpw'?'❌ 비밀번호가 달라요':t==='busy'?'⏳ 서버가 바빠요. 잠시 뒤 다시 눌러 주세요':'❌ 저장하지 못했어요 ('+(t||'네트워크 오류')+')';
  if(el)el.textContent=m;else toast(m);return t==='ok'||t==='sent?';}
 async function tSaveCfg(){const closed=[...document.querySelectorAll('.cs')].filter(c=>!c.checked).map(c=>c.value);$('cfgmsg').textContent='저장 중…';
- const t=await tPost({teacherConfig:true,closed});if(_tlocal){CFG.closed=closed;jset(K_CFG,CFG);}
- if(tResult(t,$('cfgmsg'))){_TC.closed=closed;CFG.closed=closed;jset(K_CFG,CFG);$('cfgmsg').textContent+=` · 닫힌 스테이지 ${closed.length}개`;}}
+ const t=await tPost({teacherConfig:true,closed});
+ if(tResult(t,$('cfgmsg'))){_TC.closed=closed;keepCfg(TCLS,{closed});$('cfgmsg').textContent+=` · ${TCLS}반 닫힌 스테이지 ${closed.length}개`;}}
 async function tSaveClassN(){const n=Math.max(1,Math.min(40,parseInt($('cn').value,10)||0));const t=await tPost({teacherConfig:true,classN:n,closed:_TC.closed||[]});
- if(_tlocal){CFG.classN=n;jset(K_CFG,CFG);}if(tResult(t,$('cnmsg'))){_TC.classN=n;CFG.classN=n;jset(K_CFG,CFG);drawT();}}
+ if(tResult(t,$('cnmsg'))){_TC.classN=n;keepCfg(TCLS,{classN:n});drawT();}}
 async function tPing(){const el=$('pingmsg');if(!SCRIPT_URL){el.textContent='시트 주소(SCRIPT_URL)가 비어 있어요';return;}el.textContent='확인 중…';
- try{const j=await apiGet('config');el.textContent=j.ver>=4?`✅ 연결 정상 · 서버 v${j.ver} · 이 기기 전송 대기 ${pendingN()}건`:`⚠ Apps Script가 예전 버전(v${j.ver||'?'})이에요. 새 Code.gs로 '새 버전' 배포해 주세요`;}
+ try{const j=await apiGet('config&cls='+TCLS);el.textContent=j.ver>=5?`✅ 연결 정상 · 서버 v${j.ver} · 이 기기 전송 대기 ${pendingN()}건`:`⚠ Apps Script가 예전 버전(v${j.ver||'?'})이에요. 새 Code.gs로 '새 버전' 배포해 주세요`;}
  catch(e){el.textContent='❌ 연결 실패: 웹앱 주소와 배포 권한(모든 사용자)을 확인해 주세요';}}
 async function tDel(i,stage,btn){const x=_T[i];
  if(!arm(btn,'d'+x.no+x.name+stage,stage==='*'?'⚠ 한 번 더 누르면 전부 삭제':'⚠ 한 번 더 누르면 삭제'))return;
  const t=await tPost({teacherDelete:true,no:x.no,name:x.name,stage});
  if(!tResult(t))return;
- if(_tlocal){jset(K_LOG,jget(K_LOG,[]).filter(r=>!(String(r.no)===String(x.no)&&r.name===x.name&&(stage==='*'||r.stage===stage))));
-  if(String(U.no)===String(x.no)&&U.name===x.name){loadP();if(stage==='*')P=newP();else delete P.stages[stage];saveP();}}
+ if(_tlocal){jset(K_LOG,jget(K_LOG,[]).filter(r=>!(String(r.cls)===TCLS&&String(r.no)===String(x.no)&&r.name===x.name&&(stage==='*'||r.stage===stage))));
+  if(U.cls===TCLS&&String(U.no)===String(x.no)&&U.name===x.name){loadP();if(stage==='*')P=newP();else delete P.stages[stage];saveP();}}
  if(stage==='*'){x.tries=[];x.stages={};x.types={};}else{delete x.stages[stage];x.tries=(x.tries||[]).filter(a=>a.s!==stage);}
  tcalc(x);toast(stage==='*'?`${x.no}번 ${x.name} 점수를 모두 지웠어요`:`${x.no}번 ${x.name}의 ${stage} 점수를 지웠어요`);drawT();}
 async function tResetAll(btn){if(!arm(btn,'resetall','⚠ 한 번 더 누르면 반 전체 초기화'))return;
  const t=await tPost({teacherReset:true});
- if(_tlocal){Object.keys(localStorage).filter(k=>k.indexOf('cg3:P:')===0||k===K_LOG).forEach(jdel);if(U.no)loadP();}
- if(tResult(t,$('rstmsg'))){_T=[];toast('반 전체 점수를 초기화했어요');if(!_tlocal)teacherPage();else drawT();}}
+ if(_tlocal){Object.keys(localStorage).filter(k=>k.indexOf('cg3:P:'+TCLS+'|')===0).forEach(jdel);jset(K_LOG,jget(K_LOG,[]).filter(r=>String(r.cls)!==TCLS));if(U.no)loadP();}
+ if(tResult(t,$('rstmsg'))){_T=[];toast(TCLS+'반 점수를 초기화했어요');if(!_tlocal)teacherPage();else drawT();}}
 
 /* 시작 */
 route();
